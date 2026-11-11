@@ -8,4 +8,7 @@
 
 pub mod text;
 
+#[cfg(feature = "internals")]
+pub mod internals;
+
 pub use text::{Text, TextBuilder, TextError, TextSlice};

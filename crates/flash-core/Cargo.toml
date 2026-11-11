@@ -7,6 +7,10 @@ publish.workspace = true
 description = "Flash editing core: text storage, editing algebra, documents, history"
 
 [features]
+# Exposes `flash_core::internals` (raw Text mutators) for benchmarks only.
+# Editor code must never enable this: document text changes go through
+# transactions (docs/PLAN.md 2.2, 2.6).
+internals = []
 # Test-only: tiny rope leaves so small inputs build multi-leaf trees and
 # exercise chunk-boundary code paths.
 small-chunks = ["crop/small_chunks"]
