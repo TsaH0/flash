@@ -8,3 +8,6 @@ description = "Flash editing core: text storage, editing algebra, documents, his
 
 [dependencies]
 crop.workspace = true
+# Used directly because crop's own grapheme-boundary check is O(document):
+# see Text::is_grapheme_boundary.
+unicode-segmentation.workspace = true

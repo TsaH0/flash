@@ -24,6 +24,7 @@ name = "flash-core"
 version = "0.1.0"
 dependencies = [
  "crop",
+ "unicode-segmentation",
 ]
 
 [[package]]

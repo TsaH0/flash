@@ -5,3 +5,7 @@
 //! GUI, or plugin runtime.
 
 #![forbid(unsafe_code)]
+
+pub mod text;
+
+pub use text::{Text, TextBuilder, TextError, TextSlice};
