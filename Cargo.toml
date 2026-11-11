@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/flash-core"]
+members = ["crates/flash-core", "apps/flash"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,6 +9,7 @@ rust-version = "1.85"
 publish = false
 
 [workspace.dependencies]
+flash-core = { path = "crates/flash-core" }
 # Pinned exactly: Text's line model and validation are written against this
 # version's behaviour (docs/PLAN.md section 2.3).
 crop = { version = "=0.4.3", features = ["graphemes"] }
