@@ -301,6 +301,38 @@ fn builder_matches_from() {
 }
 
 #[test]
+fn text_can_be_sent_to_worker_threads() {
+    // PLAN 2.8: background workers receive snapshots. Compile-time check.
+    fn assert_send_sync<T: Send + Sync + 'static>() {}
+    assert_send_sync::<Text>();
+    assert_send_sync::<TextError>();
+
+    let mut t = Text::from("shared");
+    let snap = t.snapshot();
+    let worker = std::thread::spawn(move || snap.to_string());
+    t.insert(0, "un").unwrap();
+    assert_eq!(worker.join().unwrap(), "shared");
+    assert_eq!(t, "unshared");
+}
+
+#[test]
+fn line_and_slice_errors_match_reference_for_every_line() {
+    let s = "a\r\nb\n\nc";
+    let (t, r) = (Text::from(s), RefText::new(s));
+    for line in 0..=r.line_count() + 1 {
+        assert_eq!(
+            t.line(line).is_ok(),
+            r.line_range(line).is_ok(),
+            "line {line}"
+        );
+        assert_eq!(
+            t.line_with_terminator(line).is_ok(),
+            r.line_range(line).is_ok()
+        );
+    }
+}
+
+#[test]
 fn error_messages() {
     assert_eq!(
         TextError::NotCharBoundary { offset: 3 }.to_string(),
