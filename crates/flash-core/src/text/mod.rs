@@ -38,6 +38,8 @@ use std::ops::Range;
 use crop::{Rope, RopeBuilder, RopeSlice};
 use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 
+#[cfg(test)]
+pub(crate) mod reference;
 
 /// Error returned when an offset, range, or line index is not valid for a
 /// [`Text`].
