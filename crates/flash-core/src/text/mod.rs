@@ -40,6 +40,8 @@ use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 
 #[cfg(test)]
 pub(crate) mod reference;
+#[cfg(test)]
+mod tests;
 
 /// Error returned when an offset, range, or line index is not valid for a
 /// [`Text`].
