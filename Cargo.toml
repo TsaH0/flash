@@ -15,3 +15,7 @@ flash-core = { path = "crates/flash-core" }
 crop = { version = "=0.4.3", features = ["graphemes"] }
 unicode-segmentation = "1.13"
 proptest = "1.12"
+criterion = "0.8"
+
+[profile.bench]
+debug = true

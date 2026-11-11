@@ -11,6 +11,8 @@ description = "Flash editing core: text storage, editing algebra, documents, his
 # Editor code must never enable this: document text changes go through
 # transactions (docs/PLAN.md 2.2, 2.6).
 internals = []
+# Forwards crop's UTF-16 metric so its overhead can be measured (PLAN 2.3).
+utf16 = ["crop/utf16-metric"]
 # Test-only: tiny rope leaves so small inputs build multi-leaf trees and
 # exercise chunk-boundary code paths.
 small-chunks = ["crop/small_chunks"]
@@ -23,3 +25,9 @@ unicode-segmentation.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "text"
+harness = false
+required-features = ["internals"]
