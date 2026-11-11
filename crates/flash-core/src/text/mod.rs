@@ -39,6 +39,8 @@ use crop::{Rope, RopeBuilder, RopeSlice};
 use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 
 #[cfg(test)]
+mod proptests;
+#[cfg(test)]
 pub(crate) mod reference;
 #[cfg(test)]
 mod tests;
