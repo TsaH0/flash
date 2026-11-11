@@ -1,0 +1,11 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 3564805fd19fcb6b3ec1ab04ff5dc2d6d2d9c7a00e8833d3d0036da732d2ca8d # shrinks to pieces = ["\r\n"]
+cc 81e2cdf9985b735b9617da6b3dd743e947122f70f66199b48259d825bd4c6bbf # shrinks to initial = "\r\n", ops = []
+cc 84780db2657fa587379bc13a4527c5d9bcecfe57d6b2d6d4e96647615ea7e2f1 # shrinks to initial = "\n", ops = [Replace(Index(4611686018427387904), Index(4611686018427387904), "aaaéaaéaa\n\n\naa老老\n老éaa老a老老\na\n\né\n\né\n\naaaa\né老老\naéé\né\naaé老老éé\naaa\n老老éa老a"), Insert(Index(0), ""), Insert(Index(0), "a"), Insert(Index(0), ""), Insert(Index(180281999054), "😀\n\r\n")]
+cc df6ad442f019fffd837f9a2dab655418e695e534f9f254d904f84f2af0d8de05 # shrinks to pieces = ["\n"]
+cc d85844e019da02753e6efdcc6503ffe8ec94da0cf2e6d127cc8ceadc951afa58 # shrinks to initial = "老虎老虎", ops = [Insert(Index(1229782938247303442), "")]
