@@ -1,0 +1,1054 @@
+{
+  "baseline": "plain",
+  "commit": "f60451e",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "cpu": "13th Gen Intel(R) Core(TM) i7-1355U",
+  "os": "Linux 6.18.62-1-lts",
+  "profile": "bench (release, debug symbols)",
+  "results": [
+    {
+      "id": "build/builder 64KB pieces/large",
+      "throughput": {
+        "Bytes": 104857700
+      },
+      "mean": {
+        "point_ns": 22980078.960218254,
+        "lower_ns": 22448327.428682543,
+        "upper_ns": 23668800.047428574
+      },
+      "median": {
+        "point_ns": 22516827.64375,
+        "lower_ns": 22316727.5,
+        "upper_ns": 23592490.354166664
+      }
+    },
+    {
+      "id": "build/builder 64KB pieces/medium",
+      "throughput": {
+        "Bytes": 1048585
+      },
+      "mean": {
+        "point_ns": 114356.60058271994,
+        "lower_ns": 114233.37549283648,
+        "upper_ns": 114476.81428058185
+      },
+      "median": {
+        "point_ns": 114361.10902996846,
+        "lower_ns": 114188.56230283913,
+        "upper_ns": 114557.93438485805
+      }
+    },
+    {
+      "id": "build/builder 64KB pieces/one-line",
+      "throughput": {
+        "Bytes": 1048611
+      },
+      "mean": {
+        "point_ns": 111706.30173353237,
+        "lower_ns": 111471.09261191812,
+        "upper_ns": 111905.07323819233
+      },
+      "median": {
+        "point_ns": 111800.26539973787,
+        "lower_ns": 111505.89644495412,
+        "upper_ns": 111964.59531090723
+      }
+    },
+    {
+      "id": "build/builder 64KB pieces/small",
+      "throughput": {
+        "Bytes": 4107
+      },
+      "mean": {
+        "point_ns": 393.74890160310645,
+        "lower_ns": 383.7984960481117,
+        "upper_ns": 413.2303236500017
+      },
+      "median": {
+        "point_ns": 384.010966891635,
+        "lower_ns": 383.6213897707975,
+        "upper_ns": 384.88596657771404
+      }
+    },
+    {
+      "id": "build/from &str/large",
+      "throughput": {
+        "Bytes": 104857700
+      },
+      "mean": {
+        "point_ns": 20426212.846031748,
+        "lower_ns": 19790416.447901785,
+        "upper_ns": 21176058.250198413
+      },
+      "median": {
+        "point_ns": 19840652.5,
+        "lower_ns": 19676217.3125,
+        "upper_ns": 21200211.125
+      }
+    },
+    {
+      "id": "build/from &str/medium",
+      "throughput": {
+        "Bytes": 1048585
+      },
+      "mean": {
+        "point_ns": 104993.66324875283,
+        "lower_ns": 104477.72860301021,
+        "upper_ns": 105643.93173809524
+      },
+      "median": {
+        "point_ns": 104480.0205952381,
+        "lower_ns": 104424.45371428572,
+        "upper_ns": 105651.28948979592
+      }
+    },
+    {
+      "id": "build/from &str/one-line",
+      "throughput": {
+        "Bytes": 1048611
+      },
+      "mean": {
+        "point_ns": 104695.34038218745,
+        "lower_ns": 104608.60864484699,
+        "upper_ns": 104782.32133113765
+      },
+      "median": {
+        "point_ns": 104687.31384657609,
+        "lower_ns": 104570.94380403458,
+        "upper_ns": 104829.16042267051
+      }
+    },
+    {
+      "id": "build/from &str/small",
+      "throughput": {
+        "Bytes": 4107
+      },
+      "mean": {
+        "point_ns": 371.45430580754635,
+        "lower_ns": 371.24955928990835,
+        "upper_ns": 371.6937962801352
+      },
+      "median": {
+        "point_ns": 371.3750352216712,
+        "lower_ns": 371.2503336789905,
+        "upper_ns": 371.61910971022974
+      }
+    },
+    {
+      "id": "edit/large/delete <=16B (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1187.3921602970106,
+        "lower_ns": 1175.000609139603,
+        "upper_ns": 1200.6579727863805
+      },
+      "median": {
+        "point_ns": 1173.544982078853,
+        "lower_ns": 1158.090339676476,
+        "upper_ns": 1203.521107128634
+      }
+    },
+    {
+      "id": "edit/large/delete <=4KB (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1682.97731769949,
+        "lower_ns": 1662.4322640123592,
+        "upper_ns": 1706.8569771053808
+      },
+      "median": {
+        "point_ns": 1681.1629828490354,
+        "lower_ns": 1665.8480469970882,
+        "upper_ns": 1686.8539563660045
+      }
+    },
+    {
+      "id": "edit/large/insert char (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1982.0475164151628,
+        "lower_ns": 1958.2169867974437,
+        "upper_ns": 2007.5538009561806
+      },
+      "median": {
+        "point_ns": 1966.4789971703453,
+        "lower_ns": 1940.5336,
+        "upper_ns": 1984.7983548387097
+      }
+    },
+    {
+      "id": "edit/large/insert+delete char (owned)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 715.6923066946179,
+        "lower_ns": 712.7264030590819,
+        "upper_ns": 718.7821631074992
+      },
+      "median": {
+        "point_ns": 715.3360005920092,
+        "lower_ns": 712.7662379183985,
+        "upper_ns": 718.497281348958
+      }
+    },
+    {
+      "id": "edit/large/replace <=16B with 10B (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1746.788470630952,
+        "lower_ns": 1734.8885808088633,
+        "upper_ns": 1759.940587441041
+      },
+      "median": {
+        "point_ns": 1748.6640720217106,
+        "lower_ns": 1734.1138255033557,
+        "upper_ns": 1764.6779461470041
+      }
+    },
+    {
+      "id": "edit/medium/delete <=16B (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 574.7813234995082,
+        "lower_ns": 570.555250015314,
+        "upper_ns": 580.8600307552952
+      },
+      "median": {
+        "point_ns": 568.9468085106382,
+        "lower_ns": 568.1448382126348,
+        "upper_ns": 570.5302259887005
+      }
+    },
+    {
+      "id": "edit/medium/delete <=4KB (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 873.5123369757639,
+        "lower_ns": 868.620345504564,
+        "upper_ns": 879.6318426045287
+      },
+      "median": {
+        "point_ns": 866.5581534819285,
+        "lower_ns": 861.9191670398567,
+        "upper_ns": 869.6532732729477
+      }
+    },
+    {
+      "id": "edit/medium/insert char (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1147.1528026828337,
+        "lower_ns": 1120.767164252356,
+        "upper_ns": 1182.7752911745038
+      },
+      "median": {
+        "point_ns": 1100.838949434089,
+        "lower_ns": 1085.2282805429863,
+        "upper_ns": 1127.2058823529412
+      }
+    },
+    {
+      "id": "edit/medium/insert+delete char (owned)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 360.8428091657444,
+        "lower_ns": 359.85203728218914,
+        "upper_ns": 361.8754954206316
+      },
+      "median": {
+        "point_ns": 360.2773032091129,
+        "lower_ns": 358.81015696087354,
+        "upper_ns": 361.11474300646273
+      }
+    },
+    {
+      "id": "edit/medium/replace <=16B with 10B (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 990.1736937343782,
+        "lower_ns": 983.7209574479522,
+        "upper_ns": 997.6128873740353
+      },
+      "median": {
+        "point_ns": 984.6199429068361,
+        "lower_ns": 975.5663793103448,
+        "upper_ns": 990.5207435344828
+      }
+    },
+    {
+      "id": "edit/one-line/delete <=16B (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 600.7196549928426,
+        "lower_ns": 586.8200217641497,
+        "upper_ns": 618.3869110700427
+      },
+      "median": {
+        "point_ns": 576.2832052229613,
+        "lower_ns": 573.2040650406504,
+        "upper_ns": 582.6827642276422
+      }
+    },
+    {
+      "id": "edit/one-line/delete <=4KB (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 871.6202454219239,
+        "lower_ns": 867.7637798286216,
+        "upper_ns": 876.6391328539588
+      },
+      "median": {
+        "point_ns": 866.4462839916329,
+        "lower_ns": 863.2129502963976,
+        "upper_ns": 870.9226669648181
+      }
+    },
+    {
+      "id": "edit/one-line/insert char (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1176.9504277019178,
+        "lower_ns": 1147.7298254821505,
+        "upper_ns": 1210.5053467896219
+      },
+      "median": {
+        "point_ns": 1133.9102589422864,
+        "lower_ns": 1109.4279156327543,
+        "upper_ns": 1147.8304495261282
+      }
+    },
+    {
+      "id": "edit/one-line/insert+delete char (owned)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 359.3714592663088,
+        "lower_ns": 357.56660306602345,
+        "upper_ns": 361.7462967996561
+      },
+      "median": {
+        "point_ns": 357.0566766297535,
+        "lower_ns": 356.09040794661814,
+        "upper_ns": 357.9656338297974
+      }
+    },
+    {
+      "id": "edit/one-line/replace <=16B with 10B (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 987.8378100720553,
+        "lower_ns": 982.0004866618988,
+        "upper_ns": 995.6601139473506
+      },
+      "median": {
+        "point_ns": 982.3235993431856,
+        "lower_ns": 977.1070640887934,
+        "upper_ns": 991.26
+      }
+    },
+    {
+      "id": "edit/small/delete <=16B (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 391.0326464387667,
+        "lower_ns": 359.5170529656436,
+        "upper_ns": 422.8958980135936
+      },
+      "median": {
+        "point_ns": 264.94361692994505,
+        "lower_ns": 258.51558148540056,
+        "upper_ns": 429.74763693967327
+      }
+    },
+    {
+      "id": "edit/small/delete <=4KB (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 501.42211794243275,
+        "lower_ns": 496.9976751701743,
+        "upper_ns": 507.4762501554112
+      },
+      "median": {
+        "point_ns": 494.97981699575325,
+        "lower_ns": 493.43081694792477,
+        "upper_ns": 498.38211439954466
+      }
+    },
+    {
+      "id": "edit/small/insert char (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 743.2105742412846,
+        "lower_ns": 696.9855007473903,
+        "upper_ns": 786.5644941089378
+      },
+      "median": {
+        "point_ns": 847.3355174878212,
+        "lower_ns": 838.8982283082216,
+        "upper_ns": 862.317747440273
+      }
+    },
+    {
+      "id": "edit/small/insert+delete char (owned)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 97.70734454767074,
+        "lower_ns": 97.36527526413542,
+        "upper_ns": 98.27470478354859
+      },
+      "median": {
+        "point_ns": 97.43446288535284,
+        "lower_ns": 97.19443719689723,
+        "upper_ns": 97.59899485542473
+      }
+    },
+    {
+      "id": "edit/small/replace <=16B with 10B (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 375.9235127443361,
+        "lower_ns": 365.9454701974199,
+        "upper_ns": 386.85935518245196
+      },
+      "median": {
+        "point_ns": 353.2339987789988,
+        "lower_ns": 349.5175949817312,
+        "upper_ns": 357.4486169175028
+      }
+    },
+    {
+      "id": "edit/unicode/delete <=16B (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 517.6417614798874,
+        "lower_ns": 515.8784791099093,
+        "upper_ns": 519.7798522371706
+      },
+      "median": {
+        "point_ns": 513.9766975089716,
+        "lower_ns": 512.9976994637962,
+        "upper_ns": 516.6958477040644
+      }
+    },
+    {
+      "id": "edit/unicode/delete <=4KB (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 894.4235509175223,
+        "lower_ns": 890.0748869787793,
+        "upper_ns": 899.7238430504725
+      },
+      "median": {
+        "point_ns": 891.5742992979958,
+        "lower_ns": 888.8581263476701,
+        "upper_ns": 895.7524820447824
+      }
+    },
+    {
+      "id": "edit/unicode/insert char (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 833.3970560878516,
+        "lower_ns": 829.4359235004589,
+        "upper_ns": 837.8317312956408
+      },
+      "median": {
+        "point_ns": 826.0510473866178,
+        "lower_ns": 821.8807382550335,
+        "upper_ns": 835.5376871450696
+      }
+    },
+    {
+      "id": "edit/unicode/insert+delete char (owned)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 336.00636695469524,
+        "lower_ns": 335.3102071662532,
+        "upper_ns": 336.62383613816644
+      },
+      "median": {
+        "point_ns": 336.45787501880466,
+        "lower_ns": 335.85060304243063,
+        "upper_ns": 336.91361468186597
+      }
+    },
+    {
+      "id": "edit/unicode/replace <=16B with 10B (after snapshot)",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1022.6164974956343,
+        "lower_ns": 1015.1018100126585,
+        "upper_ns": 1031.79612593889
+      },
+      "median": {
+        "point_ns": 1013.3361494495339,
+        "lower_ns": 1006.4149321266968,
+        "upper_ns": 1021.5513308705124
+      }
+    },
+    {
+      "id": "grapheme_boundary_at_start/crop Rope/medium",
+      "throughput": null,
+      "mean": {
+        "point_ns": 2738.6727706182055,
+        "lower_ns": 2721.0053014506384,
+        "upper_ns": 2760.3903313091414
+      },
+      "median": {
+        "point_ns": 2716.818911693891,
+        "lower_ns": 2707.2517341842395,
+        "upper_ns": 2723.1227621483376
+      }
+    },
+    {
+      "id": "grapheme_boundary_at_start/crop Rope/small",
+      "throughput": null,
+      "mean": {
+        "point_ns": 33.11635808674375,
+        "lower_ns": 33.00853883791125,
+        "upper_ns": 33.236875485121715
+      },
+      "median": {
+        "point_ns": 33.042969086019525,
+        "lower_ns": 32.92888306926116,
+        "upper_ns": 33.15291361968003
+      }
+    },
+    {
+      "id": "grapheme_boundary_at_start/flash Text/large",
+      "throughput": null,
+      "mean": {
+        "point_ns": 289.656498268126,
+        "lower_ns": 288.79888235286955,
+        "upper_ns": 290.7541146994699
+      },
+      "median": {
+        "point_ns": 288.603034166564,
+        "lower_ns": 288.2053356282272,
+        "upper_ns": 289.4812926123097
+      }
+    },
+    {
+      "id": "grapheme_boundary_at_start/flash Text/medium",
+      "throughput": null,
+      "mean": {
+        "point_ns": 219.7256516223263,
+        "lower_ns": 219.06989839238383,
+        "upper_ns": 220.47172731944906
+      },
+      "median": {
+        "point_ns": 218.3123199737078,
+        "lower_ns": 218.08106493057193,
+        "upper_ns": 218.72812738968108
+      }
+    },
+    {
+      "id": "grapheme_boundary_at_start/flash Text/small",
+      "throughput": null,
+      "mean": {
+        "point_ns": 132.5127162576311,
+        "lower_ns": 132.03062990187055,
+        "upper_ns": 133.11099219415652
+      },
+      "median": {
+        "point_ns": 132.62945994427844,
+        "lower_ns": 131.5295904358702,
+        "upper_ns": 132.78249011990977
+      }
+    },
+    {
+      "id": "query/large/check_offset",
+      "throughput": null,
+      "mean": {
+        "point_ns": 134.79444965714833,
+        "lower_ns": 133.12554848054782,
+        "upper_ns": 136.56651317101336
+      },
+      "median": {
+        "point_ns": 135.80998617630965,
+        "lower_ns": 134.8338489428363,
+        "upper_ns": 137.2083957319356
+      }
+    },
+    {
+      "id": "query/large/is_grapheme_boundary",
+      "throughput": null,
+      "mean": {
+        "point_ns": 994.5055306253026,
+        "lower_ns": 989.9391577432311,
+        "upper_ns": 999.3350520074221
+      },
+      "median": {
+        "point_ns": 989.7945351834093,
+        "lower_ns": 984.4867864693447,
+        "upper_ns": 994.4171511627907
+      }
+    },
+    {
+      "id": "query/large/line_of_offset",
+      "throughput": null,
+      "mean": {
+        "point_ns": 260.36444565497567,
+        "lower_ns": 257.9461113973522,
+        "upper_ns": 263.2629851937155
+      },
+      "median": {
+        "point_ns": 261.4396126620536,
+        "lower_ns": 259.11047482701025,
+        "upper_ns": 263.60296668591786
+      }
+    },
+    {
+      "id": "query/large/line_range",
+      "throughput": null,
+      "mean": {
+        "point_ns": 570.8999329867651,
+        "lower_ns": 562.8472647149355,
+        "upper_ns": 581.7527052948979
+      },
+      "median": {
+        "point_ns": 560.157600543763,
+        "lower_ns": 558.9999754664873,
+        "upper_ns": 562.9121593552675
+      }
+    },
+    {
+      "id": "query/large/line_start",
+      "throughput": null,
+      "mean": {
+        "point_ns": 204.67336983545937,
+        "lower_ns": 199.04197174605656,
+        "upper_ns": 211.71392113068617
+      },
+      "median": {
+        "point_ns": 198.21113807760867,
+        "lower_ns": 196.53383609854197,
+        "upper_ns": 199.76692642869114
+      }
+    },
+    {
+      "id": "query/large/snapshot",
+      "throughput": null,
+      "mean": {
+        "point_ns": 14.517329394025927,
+        "lower_ns": 14.514737653298853,
+        "upper_ns": 14.520857661671382
+      },
+      "median": {
+        "point_ns": 14.514189647702748,
+        "lower_ns": 14.513300123530255,
+        "upper_ns": 14.515233716071277
+      }
+    },
+    {
+      "id": "query/medium/check_offset",
+      "throughput": null,
+      "mean": {
+        "point_ns": 16.569870766429148,
+        "lower_ns": 16.512763594414274,
+        "upper_ns": 16.6324659561872
+      },
+      "median": {
+        "point_ns": 16.542008616685248,
+        "lower_ns": 16.46022020233977,
+        "upper_ns": 16.58217261561527
+      }
+    },
+    {
+      "id": "query/medium/is_grapheme_boundary",
+      "throughput": null,
+      "mean": {
+        "point_ns": 539.4088890588004,
+        "lower_ns": 538.2868126424814,
+        "upper_ns": 540.629266882582
+      },
+      "median": {
+        "point_ns": 538.1414022888599,
+        "lower_ns": 537.4326473785381,
+        "upper_ns": 538.6509777150031
+      }
+    },
+    {
+      "id": "query/medium/line_of_offset",
+      "throughput": null,
+      "mean": {
+        "point_ns": 99.04489100605612,
+        "lower_ns": 96.62530320417746,
+        "upper_ns": 101.6015787018361
+      },
+      "median": {
+        "point_ns": 95.3216961419455,
+        "lower_ns": 90.41920219802586,
+        "upper_ns": 101.61715027330169
+      }
+    },
+    {
+      "id": "query/medium/line_range",
+      "throughput": null,
+      "mean": {
+        "point_ns": 273.94098951766114,
+        "lower_ns": 269.86189896300397,
+        "upper_ns": 279.4528196194854
+      },
+      "median": {
+        "point_ns": 268.63963218766776,
+        "lower_ns": 267.38220475123893,
+        "upper_ns": 270.09005246629897
+      }
+    },
+    {
+      "id": "query/medium/line_start",
+      "throughput": null,
+      "mean": {
+        "point_ns": 82.52747799566883,
+        "lower_ns": 82.0590403366049,
+        "upper_ns": 83.11831426302635
+      },
+      "median": {
+        "point_ns": 81.83580322614135,
+        "lower_ns": 81.53375379584209,
+        "upper_ns": 82.09769767577669
+      }
+    },
+    {
+      "id": "query/medium/snapshot",
+      "throughput": null,
+      "mean": {
+        "point_ns": 14.54522402732647,
+        "lower_ns": 14.515529266517596,
+        "upper_ns": 14.602148983229796
+      },
+      "median": {
+        "point_ns": 14.514069587315687,
+        "lower_ns": 14.51319564101624,
+        "upper_ns": 14.515545598087781
+      }
+    },
+    {
+      "id": "query/small/check_offset",
+      "throughput": null,
+      "mean": {
+        "point_ns": 4.373922332844491,
+        "lower_ns": 4.370291156370183,
+        "upper_ns": 4.377984910989232
+      },
+      "median": {
+        "point_ns": 4.368595262135761,
+        "lower_ns": 4.365862235826337,
+        "upper_ns": 4.371931347260715
+      }
+    },
+    {
+      "id": "query/small/is_grapheme_boundary",
+      "throughput": null,
+      "mean": {
+        "point_ns": 197.26269195004195,
+        "lower_ns": 196.9327861321233,
+        "upper_ns": 197.63300419137022
+      },
+      "median": {
+        "point_ns": 196.9820003762602,
+        "lower_ns": 196.6437164439576,
+        "upper_ns": 197.41753524672708
+      }
+    },
+    {
+      "id": "query/small/line_of_offset",
+      "throughput": null,
+      "mean": {
+        "point_ns": 21.34948270550113,
+        "lower_ns": 21.337472254952548,
+        "upper_ns": 21.36285123236898
+      },
+      "median": {
+        "point_ns": 21.33636376870669,
+        "lower_ns": 21.326652841303062,
+        "upper_ns": 21.348212892170395
+      }
+    },
+    {
+      "id": "query/small/line_range",
+      "throughput": null,
+      "mean": {
+        "point_ns": 69.03514810727268,
+        "lower_ns": 68.85663771051969,
+        "upper_ns": 69.35922536819521
+      },
+      "median": {
+        "point_ns": 68.84282229944284,
+        "lower_ns": 68.81486983277787,
+        "upper_ns": 68.88968407102068
+      }
+    },
+    {
+      "id": "query/small/line_start",
+      "throughput": null,
+      "mean": {
+        "point_ns": 32.51641158645966,
+        "lower_ns": 31.989789154299416,
+        "upper_ns": 33.26032116045813
+      },
+      "median": {
+        "point_ns": 31.94430411394366,
+        "lower_ns": 31.934148334164675,
+        "upper_ns": 31.961192272651445
+      }
+    },
+    {
+      "id": "query/small/snapshot",
+      "throughput": null,
+      "mean": {
+        "point_ns": 14.634205396253972,
+        "lower_ns": 14.551766745369266,
+        "upper_ns": 14.739238651010192
+      },
+      "median": {
+        "point_ns": 14.521833962364543,
+        "lower_ns": 14.519788954929693,
+        "upper_ns": 14.523520308282142
+      }
+    },
+    {
+      "id": "query/unicode/check_offset",
+      "throughput": null,
+      "mean": {
+        "point_ns": 16.524528705565036,
+        "lower_ns": 16.488407181172345,
+        "upper_ns": 16.562905828871138
+      },
+      "median": {
+        "point_ns": 16.476193105655867,
+        "lower_ns": 16.4575133617771,
+        "upper_ns": 16.502326571599497
+      }
+    },
+    {
+      "id": "query/unicode/is_grapheme_boundary",
+      "throughput": null,
+      "mean": {
+        "point_ns": 598.3980615575877,
+        "lower_ns": 597.3450238914913,
+        "upper_ns": 599.5624742055659
+      },
+      "median": {
+        "point_ns": 597.1044532647071,
+        "lower_ns": 596.4513698630137,
+        "upper_ns": 598.8034556626642
+      }
+    },
+    {
+      "id": "query/unicode/line_of_offset",
+      "throughput": null,
+      "mean": {
+        "point_ns": 92.38841087249627,
+        "lower_ns": 90.7971767388637,
+        "upper_ns": 94.50588219609493
+      },
+      "median": {
+        "point_ns": 90.10733746084065,
+        "lower_ns": 89.6907153356198,
+        "upper_ns": 90.49771896951749
+      }
+    },
+    {
+      "id": "query/unicode/line_range",
+      "throughput": null,
+      "mean": {
+        "point_ns": 302.1735878236061,
+        "lower_ns": 300.99193807438354,
+        "upper_ns": 303.5255691167371
+      },
+      "median": {
+        "point_ns": 300.30118749708566,
+        "lower_ns": 299.6088488992012,
+        "upper_ns": 301.01883636165815
+      }
+    },
+    {
+      "id": "query/unicode/line_start",
+      "throughput": null,
+      "mean": {
+        "point_ns": 88.13495120740514,
+        "lower_ns": 87.74866350358695,
+        "upper_ns": 88.54608900596048
+      },
+      "median": {
+        "point_ns": 87.9972828714537,
+        "lower_ns": 87.7719295482584,
+        "upper_ns": 88.19461893156672
+      }
+    },
+    {
+      "id": "query/unicode/snapshot",
+      "throughput": null,
+      "mean": {
+        "point_ns": 14.603855176505574,
+        "lower_ns": 14.521374340966107,
+        "upper_ns": 14.734602299578206
+      },
+      "median": {
+        "point_ns": 14.514798753750267,
+        "lower_ns": 14.513840354341866,
+        "upper_ns": 14.516882431079239
+      }
+    },
+    {
+      "id": "traverse/chunks/empty",
+      "throughput": {
+        "Bytes": 0
+      },
+      "mean": {
+        "point_ns": 17.932085903531917,
+        "lower_ns": 17.798324617688593,
+        "upper_ns": 18.070267396023127
+      },
+      "median": {
+        "point_ns": 17.723803548049226,
+        "lower_ns": 17.710335295354213,
+        "upper_ns": 17.83659812050857
+      }
+    },
+    {
+      "id": "traverse/chunks/large",
+      "throughput": {
+        "Bytes": 104857700
+      },
+      "mean": {
+        "point_ns": 554408.070699102,
+        "lower_ns": 542747.9807617653,
+        "upper_ns": 566821.3853978826
+      },
+      "median": {
+        "point_ns": 520561.8897509187,
+        "lower_ns": 515230.8469387755,
+        "upper_ns": 549331.1241830066
+      }
+    },
+    {
+      "id": "traverse/chunks/medium",
+      "throughput": {
+        "Bytes": 1048585
+      },
+      "mean": {
+        "point_ns": 3817.458655866337,
+        "lower_ns": 3802.8512267713363,
+        "upper_ns": 3833.352926435473
+      },
+      "median": {
+        "point_ns": 3797.713275628077,
+        "lower_ns": 3791.0251053370785,
+        "upper_ns": 3816.810145406477
+      }
+    },
+    {
+      "id": "traverse/chunks/small",
+      "throughput": {
+        "Bytes": 4107
+      },
+      "mean": {
+        "point_ns": 36.853849451297826,
+        "lower_ns": 36.78264323471481,
+        "upper_ns": 36.92473442570163
+      },
+      "median": {
+        "point_ns": 36.83541511373635,
+        "lower_ns": 36.74502997791101,
+        "upper_ns": 36.9891177848689
+      }
+    },
+    {
+      "id": "traverse/chunks/unicode",
+      "throughput": {
+        "Bytes": 1048584
+      },
+      "mean": {
+        "point_ns": 3793.5080460303393,
+        "lower_ns": 3781.127654558163,
+        "upper_ns": 3806.9790964664267
+      },
+      "median": {
+        "point_ns": 3784.1119040247677,
+        "lower_ns": 3778.0557766367137,
+        "upper_ns": 3797.7484717348925
+      }
+    },
+    {
+      "id": "traverse/chunks reversed/empty",
+      "throughput": {
+        "Bytes": 0
+      },
+      "mean": {
+        "point_ns": 18.47841005512565,
+        "lower_ns": 18.40146805347315,
+        "upper_ns": 18.55115299546219
+      },
+      "median": {
+        "point_ns": 18.51464224231791,
+        "lower_ns": 18.506676991070762,
+        "upper_ns": 18.53579809719318
+      }
+    },
+    {
+      "id": "traverse/chunks reversed/large",
+      "throughput": {
+        "Bytes": 104857700
+      },
+      "mean": {
+        "point_ns": 496564.25057568774,
+        "lower_ns": 487679.56741527776,
+        "upper_ns": 507806.2767819115
+      },
+      "median": {
+        "point_ns": 480444.4005376344,
+        "lower_ns": 478877.6959777493,
+        "upper_ns": 483376.6847826087
+      }
+    },
+    {
+      "id": "traverse/chunks reversed/medium",
+      "throughput": {
+        "Bytes": 1048585
+      },
+      "mean": {
+        "point_ns": 3858.866394072773,
+        "lower_ns": 3854.971333963679,
+        "upper_ns": 3862.9110395095868
+      },
+      "median": {
+        "point_ns": 3857.126722640169,
+        "lower_ns": 3853.3816930076628,
+        "upper_ns": 3863.484531579218
+      }
+    },
+    {
+      "id": "traverse/chunks reversed/small",
+      "throughput": {
+        "Bytes": 4107
+      },
+      "mean": {
+        "point_ns": 36.656569396781045,
+        "lower_ns": 36.5690402748901,
+        "upper_ns": 36.73924793242409
+      },
+      "median": {
+        "point_ns": 36.772682655522914,
+        "lower_ns": 36.668958582921405,
+        "upper_ns": 36.854371021307486
+      }
+    },
+    {
+      "id": "traverse/chunks reversed/unicode",
+      "throughput": {
+        "Bytes": 1048584
+      },
+      "mean": {
+        "point_ns": 3876.1726763984684,
+        "lower_ns": 3871.899944096118,
+        "upper_ns": 3880.7470616856626
+      },
+      "median": {
+        "point_ns": 3871.947437377235,
+        "lower_ns": 3869.1358748778102,
+        "upper_ns": 3876.6175115207375
+      }
+    }
+  ]
+}
