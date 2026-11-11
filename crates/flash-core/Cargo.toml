@@ -25,3 +25,14 @@ unicode-segmentation.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "text"
+harness = false
+required-features = ["internals"]
+
+[[bench]]
+name = "latency"
+harness = false
+required-features = ["internals"]
