@@ -31,3 +31,8 @@ criterion.workspace = true
 name = "text"
 harness = false
 required-features = ["internals"]
+
+[[bench]]
+name = "latency"
+harness = false
+required-features = ["internals"]
