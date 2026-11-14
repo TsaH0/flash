@@ -3,6 +3,9 @@
 
 use super::{ChangeSet, ChangeSetError, Op};
 
+/// Largest op capacity [`ChangeSetBuilder::with_capacity`] reserves up front.
+const MAX_CAPACITY_HINT: usize = 1 << 16;
+
 /// Builds a [`ChangeSet`] op by op, canonicalising as it goes.
 ///
 /// Ops describe a walk over the old text from start to end. Lengths that
@@ -27,10 +30,12 @@ impl ChangeSetBuilder {
         Self::with_capacity(len_before, 0)
     }
 
-    /// Like [`new`](Self::new), with room for `ops` ops.
+    /// Like [`new`](Self::new), with room for `ops` ops. `ops` is a hint:
+    /// at most 65,536 ops are reserved up front, so a huge value cannot panic
+    /// or abort on allocation; the builder grows as needed.
     pub fn with_capacity(len_before: usize, ops: usize) -> Self {
         Self {
-            ops: Vec::with_capacity(ops),
+            ops: Vec::with_capacity(ops.min(MAX_CAPACITY_HINT)),
             len_before,
             consumed: 0,
             produced: 0,

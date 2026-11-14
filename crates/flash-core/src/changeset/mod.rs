@@ -32,11 +32,19 @@
 //!
 //! - `q` strictly inside a `Retain` run `[o, o + k)` maps to `n + (q - o)`.
 //! - `q` in the closed range `[o, o + d]` of an edit group (for a pure
-//!   insert, only `q == o`) maps to `n` with [`Assoc::Before`] and to
-//!   `n + len(s)` with [`Assoc::After`]. So at a pure insertion `Before`
-//!   stays left of the inserted text and `After` moves right of it; inside a
-//!   pure deletion everything collapses to the deletion point; and a
-//!   replaced range collapses to the replacement's left or right edge.
+//!   insert, only `q == o`) maps to the group's left edge `n` or right edge
+//!   `n + len(s)`:
+//!   - if `d > 0`, the old edges map to the matching new edges (`q == o` to
+//!     `n`, `q == o + d` to `n + len(s)`), whatever the `Assoc`;
+//!   - otherwise (a pure insertion, or `q` strictly inside the deleted
+//!     range) [`Assoc::Before`] gives `n` and [`Assoc::After`] gives
+//!     `n + len(s)`.
+//!
+//!   So at a pure insertion `Before` stays left of the inserted text and
+//!   `After` moves right of it; a pure deletion collapses to the deletion
+//!   point; and a range that touches or covers a replaced range keeps the
+//!   replacement (mapping a range with start `After` and end `Before` never
+//!   shrinks it past a replacement or inverts it).
 //! - `q == len_before` with no edit at the end maps to `len_after`.
 //! - `q > len_before` is an error.
 //!

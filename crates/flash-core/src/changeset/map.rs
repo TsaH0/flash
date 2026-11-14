@@ -68,12 +68,8 @@ impl ChangeSet {
                 Op::Insert(s) => (0, s.len()),
             };
             // An edit group covers the closed range [old, old + deleted].
-            let target = match assoc {
-                Assoc::Before => new,
-                Assoc::After => new + inserted,
-            };
             while let Some(p) = pending.next_if(|p| **p <= old + deleted) {
-                *p = target;
+                *p = group_image(*p - old, deleted, new, inserted, assoc);
             }
             old += deleted;
             new += inserted;
@@ -81,6 +77,26 @@ impl ChangeSet {
         // Only `len_before` itself can remain, with no edit at the end.
         for p in pending {
             *p = new;
+        }
+    }
+}
+
+/// Image of a position `offset` bytes into an edit group that deletes
+/// `deleted` bytes and inserts `inserted` bytes at new offset `new`
+/// (`offset <= deleted`). With a deletion, the group's old edges map to the
+/// replacement's edges and only interior positions follow `assoc`; a pure
+/// insertion follows `assoc`.
+fn group_image(offset: usize, deleted: usize, new: usize, inserted: usize, assoc: Assoc) -> usize {
+    let left = new;
+    let right = new + inserted;
+    if deleted > 0 && offset == 0 {
+        left
+    } else if deleted > 0 && offset == deleted {
+        right
+    } else {
+        match assoc {
+            Assoc::Before => left,
+            Assoc::After => right,
         }
     }
 }

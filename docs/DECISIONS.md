@@ -140,33 +140,42 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
 
 ## 009 — ChangeSet canonical form and position-mapping policy
 
-- **Date:** 2026-11-14 (Stage 2)
+- **Date:** 2026-11-14 (Stage 2; mapping rule revised after the adversarial
+  review the same day)
 - **Decision:** a `ChangeSet` is `Vec<Op>` (`Retain(usize)`, `Delete(usize)`,
   `Insert(CompactString)`) built only through `ChangeSetBuilder`, which keeps
   canonical form: no empty ops, no adjacent ops of one kind, and `Delete`
   before `Insert` within an edit group. Positions map by the policy in the
-  `changeset` module docs: inside a `Retain` they shift; anywhere in the
-  closed range `[o, o + d]` of an edit group they collapse to the group's
-  left edge (`Assoc::Before`) or right edge after the inserted text
-  (`Assoc::After`); `len_before` maps to `len_after` unless an insert sits at
-  the end.
+  `changeset` module docs: inside a `Retain` they shift. In the closed range
+  `[o, o + d]` of an edit group, if `d > 0` the old edges map to the
+  replacement's edges (`o` to its left edge, `o + d` to its right edge), and
+  every other position (a pure insertion point, or strictly inside the
+  deleted range) goes to the left edge with `Assoc::Before` and the right
+  edge with `Assoc::After`.
 - **Why:** canonical form makes structural equality meaningful
   (`invert(invert(c)) == c` is checked structurally) and gives apply and
-  mapping one shape to handle. One uniform rule for inserts, deletes, and
-  replacements is easy to state and to test against a naive model.
+  mapping one shape to handle. The edge rule keeps ranges whole: mapping a
+  range with start `After` and end `Before` (PLAN Stage 3: a range does not
+  absorb inserts at its edges) keeps a replacement that the range touches
+  or covers, and never inverts the range.
+- **Rejected:** the first version collapsed the whole closed range by
+  `Assoc` alone. The adversarial review showed it drops a replacement from a
+  range ending at it (`"abc"` over `abcd → aQd` became `"a"`) and inverts a
+  range equal to the replaced range (`1..3` became `3..1`). Its stated reason
+  for rejecting half-open groups (that a pure deletion would treat its two
+  edges differently) was wrong: both edges map to the deletion point either
+  way. Tests: `range_ending_at_replacement_end_keeps_the_replacement`,
+  `range_equal_to_replaced_range_covers_the_replacement`.
 - **Consequence (PLAN Stage 2 "Known trap"):** composition does not preserve
   positions. Example: on `"abc"`, `a` inserts `"Z"` at 1 and `b` deletes the
-  old `"b"`; mapping 2 with `Before` through `a` then `b` gives 2, through
-  `compose(a, b)` gives 1 (`compose_loses_positions_documented`). Position
-  tracking maps through each change set in order.
-- **Alternatives:** `Insert` before `Delete` (equivalent, arbitrary);
-  half-open group ranges, so a position right after a replaced range shifts
-  instead of collapsing (rejected: a pure deletion would then treat its two
-  edges differently).
-- **Trade-off:** a position just after a replaced range moves to the
-  replacement's edge chosen by `Assoc`, not past the replacement, when
-  `Before` is used. Stage 3's selection mapping picks `Assoc` per endpoint
-  with this in mind.
+  old `"b"`; mapping 1 with `After` through `a` then `b` gives 2 (after `Z`),
+  through `compose(a, b)` gives 1 (`compose_loses_positions_documented`).
+  Position tracking maps through each change set in order.
+- **Alternatives:** `Insert` before `Delete` in canonical form (equivalent,
+  arbitrary).
+- **Trade-off:** a cursor exactly at the start or end of a replaced range
+  ignores its `Assoc`; Stage 3 cursors that should jump past a replacement
+  must do so explicitly.
 - **Reopen if:** Stage 3 selection mapping or Stage 8 markers need a
   different rule at replacement edges.
 

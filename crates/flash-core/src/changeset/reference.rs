@@ -24,7 +24,8 @@ pub(crate) fn apply_ops(ops: &[Op], s: &str) -> String {
 
 /// Maps old position `pos` by the policy in the module docs, scanning from
 /// the start for every call. An edit group is a maximal run of non-`Retain`
-/// ops (in any order); it owns the closed old range it deletes.
+/// ops (in any order); it owns the closed old range it deletes. With a
+/// deletion, its two old edges map to the replacement's two edges.
 pub(crate) fn map_pos_naive(ops: &[Op], pos: usize, assoc: Assoc) -> usize {
     let (mut old, mut new) = (0, 0);
     let mut i = 0;
@@ -48,9 +49,14 @@ pub(crate) fn map_pos_naive(ops: &[Op], pos: usize, assoc: Assoc) -> usize {
             i += 1;
         }
         if pos <= old + deleted {
-            return match assoc {
-                Assoc::Before => new,
-                Assoc::After => new + inserted,
+            let at_left_edge = deleted > 0 && pos == old;
+            let at_right_edge = deleted > 0 && pos == old + deleted;
+            return if at_left_edge {
+                new
+            } else if at_right_edge || assoc == Assoc::After {
+                new + inserted
+            } else {
+                new
             };
         }
         old += deleted;

@@ -347,9 +347,40 @@ fn compose_loses_positions_documented() {
     let mut t = Text::from("abc");
     ab.apply(&mut t).unwrap();
     assert_eq!(t, "aZc");
-    // Position 2 (between 'b' and 'c'), Before:
-    let sequential = b.map_pos(a.map_pos(2, Before).unwrap(), Before).unwrap();
-    let composed = ab.map_pos(2, Before).unwrap();
-    assert_eq!(sequential, 2); // after 'Z', before 'c'
-    assert_eq!(composed, 1); // before 'Z': the composed replacement collapsed it
+    // Position 1 (between 'a' and 'b'), After:
+    let sequential = b.map_pos(a.map_pos(1, After).unwrap(), After).unwrap();
+    let composed = ab.map_pos(1, After).unwrap();
+    assert_eq!(sequential, 2); // after 'Z': a's insert pushed it right
+    assert_eq!(composed, 1); // before 'Z': the composed replacement starts here
+}
+
+/// A range mapped with start `After` and end `Before` (PLAN Stage 3: a
+/// non-empty range does not absorb text inserted at its edges).
+fn map_range(c: &ChangeSet, r: std::ops::Range<usize>) -> std::ops::Range<usize> {
+    c.map_pos(r.start, After).unwrap()..c.map_pos(r.end, Before).unwrap()
+}
+
+#[test]
+fn range_ending_at_replacement_end_keeps_the_replacement() {
+    let c = ChangeSet::from_edits(4, [(1..3, "Q")]).unwrap(); // abcd -> aQd
+    assert_eq!(map_range(&c, 0..3), 0..2); // "abc" -> "aQ"
+    assert_eq!(map_range(&c, 1..4), 1..3); // "bcd" -> "Qd"
+}
+
+#[test]
+fn range_equal_to_replaced_range_covers_the_replacement() {
+    let c = ChangeSet::from_edits(4, [(1..3, "XY")]).unwrap(); // abcd -> aXYd
+    assert_eq!(map_range(&c, 1..3), 1..3);
+}
+
+#[test]
+fn range_touching_an_insert_does_not_absorb_it() {
+    let c = ChangeSet::from_edits(4, [(1..1, "X"), (3..3, "Y")]).unwrap(); // abcd -> aXbcYd
+    assert_eq!(map_range(&c, 1..3), 2..4); // "bc" stays "bc"
+}
+
+#[test]
+fn builder_capacity_hint_never_panics() {
+    let b = ChangeSetBuilder::with_capacity(0, usize::MAX);
+    assert_eq!(b.finish(), Ok(ChangeSet::identity(0)));
 }

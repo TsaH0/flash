@@ -1,6 +1,6 @@
 # Flash status
 
-Updated: 2026-11-14, Stage 1 closed; Stage 2 starting.
+Updated: 2026-11-14, end of Stage 2 (awaiting owner approval).
 
 ## Completed and tested
 
@@ -14,6 +14,11 @@ Updated: 2026-11-14, Stage 1 closed; Stage 2 starting.
 - **Reference model and property tests** (`text/reference.rs`,
   `text/proptests.rs`): random Unicode edit sequences including invalid
   offsets, run with default and tiny (`small-chunks`) rope leaves.
+- **`ChangeSet`** (`crates/flash-core/src/changeset/`): canonical builder,
+  `from_edits`, validate, atomic `pub(crate)` apply, invert, compose,
+  `map_pos`/`map_sorted` with a documented policy (DECISIONS 009, 010);
+  property tests against a String model; fuzz target
+  (`crates/flash-core/fuzz`, nightly); benchmarks (`benches/changeset.rs`).
 - **Benchmarks** (`benches/text.rs`, `benches/latency.rs`): Criterion suite
   plus per-operation p50/p95/p99/max and allocation counts on deterministic
   fixtures. Results in `bench/results/`.
@@ -24,12 +29,14 @@ Updated: 2026-11-14, Stage 1 closed; Stage 2 starting.
 
 ## In progress
 
-- Nothing. Stage 1 is waiting for review and approval.
+- Nothing. Stage 2 is waiting for review and approval
+  ([stage-2.md](stages/stage-2.md)).
 
 ## Planned
 
-- Stage 2: ChangeSet algebra (next, after approval).
-- Stages 3–11 as in [PLAN.md](PLAN.md).
+- Stage 3: selections, transactions, multi-cursor, walking skeleton (next,
+  after approval).
+- Stages 4–11 as in [PLAN.md](PLAN.md).
 
 ## Deferred
 
