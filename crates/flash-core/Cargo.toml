@@ -22,6 +22,8 @@ crop.workspace = true
 # Used directly because crop's own grapheme-boundary check is O(document):
 # see Text::is_grapheme_boundary.
 unicode-segmentation.workspace = true
+# Inline (heap-free) storage for short inserted strings in ChangeSet ops.
+compact_str.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

@@ -23,36 +23,9 @@ use proptest::sample::Index;
 
 use super::reference::{RefText, move_over_boundaries};
 use super::*;
+use crate::strategies::text_strategy;
 
 const FULL_CHECK_LEN: usize = 600;
-
-/// Pieces chosen to hit the interesting cases: multi-byte chars of every
-/// width, combining marks, ZWJ sequences, regional indicators, every line
-/// ending, and a long run.
-fn piece() -> impl Strategy<Value = String> {
-    prop_oneof![
-        4 => Just("a".to_owned()),
-        2 => Just("xyz ".to_owned()),
-        3 => Just("\n".to_owned()),
-        2 => Just("\r\n".to_owned()),
-        1 => Just("\r".to_owned()),
-        1 => Just("\t".to_owned()),
-        2 => Just("é".to_owned()),                 // 2 bytes, precomposed
-        2 => Just("e\u{301}".to_owned()),          // combining acute
-        2 => Just("老虎".to_owned()),               // 3 bytes each
-        2 => Just("😀".to_owned()),                 // 4 bytes
-        1 => Just("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}".to_owned()), // ZWJ family
-        1 => Just("\u{1F1FA}\u{1F1F8}".to_owned()), // flag
-        1 => Just("\u{1F1EF}".to_owned()),          // lone regional indicator
-        1 => Just("\u{200D}".to_owned()),           // stray ZWJ
-        1 => Just("\u{301}".to_owned()),            // stray combining mark
-        1 => "[a-z\u{e9}\u{8001}\n]{50,300}",        // longer mixed run
-    ]
-}
-
-fn text_strategy(max_pieces: usize) -> impl Strategy<Value = String> {
-    prop::collection::vec(piece(), 0..max_pieces).prop_map(|v| v.concat())
-}
 
 #[derive(Debug, Clone)]
 enum Op {

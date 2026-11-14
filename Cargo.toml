@@ -2,7 +2,7 @@
 resolver = "3"
 members = ["crates/flash-core", "apps/flash"]
 # Vendored dependencies are patches, not workspace members.
-exclude = ["vendor"]
+exclude = ["vendor", "crates/flash-core/fuzz"]
 
 [workspace.package]
 version = "0.1.0"
@@ -16,6 +16,7 @@ flash-core = { path = "crates/flash-core" }
 # version's behaviour (docs/PLAN.md section 2.3).
 crop = { version = "=0.4.3", features = ["graphemes"] }
 unicode-segmentation = "1.13"
+compact_str = "0.9"
 proptest = "1.12"
 criterion = "0.8"
 
