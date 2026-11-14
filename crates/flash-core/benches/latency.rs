@@ -21,7 +21,9 @@ use std::time::Instant;
 
 use common::{Fixture, random_offsets, random_ranges};
 use flash_core::internals::{changeset_apply, text_delete, text_insert, text_replace};
-use flash_core::{ChangeSet, Direction, Text};
+use std::num::NonZeroU8;
+
+use flash_core::{ChangeSet, Direction, Motion, Movement, Range, Selection, Text, Transaction};
 
 struct Counting;
 
@@ -192,6 +194,60 @@ fn run_fixture(fx: &Fixture) -> Vec<Report> {
         |i| (base.snapshot(), &single_edits[i]),
         |(t, c)| changeset_apply(c, t).unwrap(),
     ));
+    // Stage 3: one-cursor transactions (build + validate + apply + new
+    // selection) on a snapshot-shared tree, and motions of one range.
+    out.push(measure(
+        name,
+        "txn insert char (1 cursor)",
+        |i| (base.snapshot(), Selection::point(offsets[i])),
+        |(t, s)| {
+            let txn = Transaction::insert(t, s, "x").unwrap();
+            txn.apply(t, s).unwrap();
+        },
+    ));
+    out.push(measure(
+        name,
+        "txn backspace (1 cursor)",
+        |i| (base.snapshot(), Selection::point(offsets[i])),
+        |(t, s)| {
+            let txn = Transaction::backspace(t, s).unwrap();
+            txn.apply(t, s).unwrap();
+        },
+    ));
+    let tab = NonZeroU8::new(4).unwrap();
+    for (label, motion) in [
+        (
+            "motion right",
+            Motion::Grapheme {
+                count: 1,
+                direction: Direction::Forward,
+            },
+        ),
+        (
+            "motion down",
+            Motion::Vertical {
+                count: 1,
+                direction: Direction::Forward,
+                tab_width: tab,
+            },
+        ),
+        (
+            "motion word forward",
+            Motion::Word {
+                count: 1,
+                direction: Direction::Forward,
+            },
+        ),
+    ] {
+        out.push(measure(
+            name,
+            label,
+            |i| Range::point(offsets[i]),
+            |r| {
+                black_box(motion.apply_range(&base, *r, Movement::Move).unwrap());
+            },
+        ));
+    }
     out.push(measure(
         name,
         "snapshot+drop",

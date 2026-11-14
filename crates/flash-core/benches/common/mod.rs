@@ -209,3 +209,36 @@ pub fn random_ranges(
         })
         .collect()
 }
+
+/// How benchmark cursors are placed.
+#[derive(Debug, Clone, Copy)]
+pub enum Layout {
+    /// At the starts of consecutive lines from the middle of the text.
+    Clustered,
+    /// At line starts spread evenly over the text, one per band of lines.
+    Spread,
+}
+
+impl Layout {
+    pub fn name(self) -> &'static str {
+        match self {
+            Layout::Clustered => "clustered",
+            Layout::Spread => "spread",
+        }
+    }
+}
+
+/// `n` cursors at line starts of `text` (fewer if lines run out, since
+/// coinciding cursors merge); the last one is primary.
+pub fn cursors(text: &Text, n: usize, layout: Layout) -> flash_core::Selection {
+    let lines = text.line_count();
+    let points = (0..n).map(|i| {
+        let line = match layout {
+            Layout::Clustered => (lines / 2 + i).min(lines - 1),
+            // Centred in each of `n` bands, so one cursor is mid-text, not at 0.
+            Layout::Spread => (2 * i + 1) * lines / (2 * n),
+        };
+        flash_core::Range::point(text.line_start(line).unwrap())
+    });
+    flash_core::Selection::new(points, n - 1).unwrap()
+}
