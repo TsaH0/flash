@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod changeset;
+pub mod selection;
 pub mod text;
 
 #[cfg(test)]
@@ -19,4 +20,5 @@ pub mod fuzzing;
 pub mod internals;
 
 pub use changeset::{Assoc, ChangeSet, ChangeSetBuilder, ChangeSetError, Op};
+pub use selection::{Range, Selection, SelectionError};
 pub use text::{Direction, Text, TextBuilder, TextError, TextSlice};

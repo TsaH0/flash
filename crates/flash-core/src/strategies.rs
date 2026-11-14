@@ -110,3 +110,29 @@ pub(crate) fn raw_ops_for(s: &str) -> impl Strategy<Value = Vec<crate::Op>> + us
         ops
     })
 }
+
+/// A selection valid for `s`: 1 to 5 ranges with char-boundary endpoints
+/// and a random primary.
+pub(crate) fn selection_for(s: &str) -> impl Strategy<Value = crate::Selection> + use<> {
+    let s = s.to_owned();
+    (
+        prop::collection::vec(
+            (any::<prop::sample::Index>(), any::<prop::sample::Index>()),
+            1..6,
+        ),
+        any::<prop::sample::Index>(),
+    )
+        .prop_map(move |(raw, primary)| {
+            let ranges: Vec<_> = raw
+                .into_iter()
+                .map(|(a, h)| {
+                    crate::Range::new(
+                        floor_boundary(&s, a.index(s.len() + 1)),
+                        floor_boundary(&s, h.index(s.len() + 1)),
+                    )
+                })
+                .collect();
+            let primary = primary.index(ranges.len());
+            crate::Selection::new(ranges, primary).expect("non-empty, primary in bounds")
+        })
+}

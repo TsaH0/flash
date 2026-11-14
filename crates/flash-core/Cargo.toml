@@ -26,6 +26,8 @@ crop.workspace = true
 unicode-segmentation.workspace = true
 # Inline (heap-free) storage for short inserted strings in ChangeSet ops.
 compact_str.workspace = true
+# Inline storage for the common single-range selection.
+smallvec.workspace = true
 arbitrary = { workspace = true, optional = true }
 
 [dev-dependencies]

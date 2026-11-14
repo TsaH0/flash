@@ -208,3 +208,32 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
 - **Reopen if:** a workload applies change sets with more than ~1 edit per
   30 bytes of document (e.g. whole-file reformatting) and per-op shows up in
   latency measurements; re-measure rebuild then.
+
+## 011 — Selection normalisation and mapping
+
+- **Date:** 2026-11-14 (Stage 3)
+- **Decision:** `Selection` keeps its ranges sorted by `(start, end)` and
+  merges by PLAN 2.5: overlapping ranges merge, touching non-empty ranges
+  stay separate, an empty range touching or inside another merges into it.
+  A merged range is the union of its group and takes its direction and goal
+  column from the *kept* range: the primary if the group contains it,
+  otherwise the group's first range in sorted order. The primary survives
+  merging. `Selection::map` maps each range's start with `Assoc::After` and
+  its end with `After` if the range is empty, `Before` otherwise, through
+  the new `ChangeSet::map_sorted_with` (per-position `Assoc`, one pass). A
+  range strictly inside a replaced span would come out inverted, so its
+  endpoints are reordered and it covers the replacement. Mapping clears goal
+  columns: after an edit, vertical motion starts from the current column.
+- **Evidence:** `selection/tests.rs` (merge, direction, mapping cases),
+  `selection/proptests.rs` (`normalise_invariants`, `map_matches_naive`
+  against per-position `map_pos_naive`); mutating the endpoint `Assoc` rule
+  makes three tests fail.
+- **Alternatives:** the merged range always forward (loses a backward
+  primary's orientation); direction from the last range in the group
+  (Helix); mapping both endpoints with one `Assoc` (a cursor would either
+  not advance when typing, or a selection would swallow text typed at its
+  edge).
+- **Trade-off:** none measured; the sort is skipped for already-sorted
+  input, so normalising after a motion or edit is O(k).
+- **Reopen if:** Stage 7 modes need a different merge direction, or markers
+  (Stage 8) need different edge behaviour (they get their own `Assoc`).

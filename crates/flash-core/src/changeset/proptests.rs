@@ -259,3 +259,27 @@ proptest! {
         }
     }
 }
+
+proptest! {
+    #[test]
+    fn map_sorted_with_matches_map_pos(
+        (c, mut positions, assocs) in text_and_changeset().prop_flat_map(|(s, c)| {
+            let len = c.len_before();
+            let n = s.len().min(16) + 1;
+            (
+                Just(c),
+                prop::collection::vec(0..=len, 0..n),
+                prop::collection::vec(prop_oneof![Just(Assoc::Before), Just(Assoc::After)], n),
+            )
+        })
+    ) {
+        positions.sort_unstable();
+        let expected: Vec<usize> = positions
+            .iter()
+            .enumerate()
+            .map(|(i, &p)| c.map_pos(p, assocs[i]).unwrap())
+            .collect();
+        c.map_sorted_with(&mut positions, |i| assocs[i]).unwrap();
+        prop_assert_eq!(positions, expected);
+    }
+}

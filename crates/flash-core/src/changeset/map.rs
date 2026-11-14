@@ -25,6 +25,17 @@ impl ChangeSet {
     /// [`ChangeSetError::PositionOutOfBounds`] for the first offending
     /// element; then `positions` is unchanged.
     pub fn map_sorted(&self, positions: &mut [usize], assoc: Assoc) -> Result<(), ChangeSetError> {
+        self.map_sorted_with(positions, |_| assoc)
+    }
+
+    /// Like [`map_sorted`](Self::map_sorted), but `assoc(i)` gives the
+    /// [`Assoc`] for `positions[i]`. Same errors, same single pass, and
+    /// `positions` is unchanged on error.
+    pub fn map_sorted_with(
+        &self,
+        positions: &mut [usize],
+        assoc: impl Fn(usize) -> Assoc,
+    ) -> Result<(), ChangeSetError> {
         let mut prev = 0;
         for (index, &position) in positions.iter().enumerate() {
             if position > self.len_before {
@@ -43,18 +54,18 @@ impl ChangeSet {
     }
 
     /// `positions` must be sorted and at most `len_before`.
-    fn map_sorted_unchecked(&self, positions: &mut [usize], assoc: Assoc) {
+    fn map_sorted_unchecked(&self, positions: &mut [usize], assoc: impl Fn(usize) -> Assoc) {
         // `old`/`new`: where the op being visited starts in the old and the
         // new text.
         let (mut old, mut new) = (0, 0);
-        let mut pending = positions.iter_mut().peekable();
+        let mut pending = positions.iter_mut().enumerate().peekable();
         let mut ops = self.ops.iter().peekable();
         while let Some(op) = ops.next() {
             let (deleted, inserted) = match op {
                 Op::Retain(k) => {
                     // Strictly inside the run; its end belongs to whatever
                     // follows (an edit group or the end of the text).
-                    while let Some(p) = pending.next_if(|p| **p < old + k) {
+                    while let Some((_, p)) = pending.next_if(|(_, p)| **p < old + k) {
                         *p = new + (*p - old);
                     }
                     old += k;
@@ -68,14 +79,14 @@ impl ChangeSet {
                 Op::Insert(s) => (0, s.len()),
             };
             // An edit group covers the closed range [old, old + deleted].
-            while let Some(p) = pending.next_if(|p| **p <= old + deleted) {
-                *p = group_image(*p - old, deleted, new, inserted, assoc);
+            while let Some((i, p)) = pending.next_if(|(_, p)| **p <= old + deleted) {
+                *p = group_image(*p - old, deleted, new, inserted, assoc(i));
             }
             old += deleted;
             new += inserted;
         }
         // Only `len_before` itself can remain, with no edit at the end.
-        for p in pending {
+        for (_, p) in pending {
             *p = new;
         }
     }

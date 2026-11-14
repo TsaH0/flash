@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 84fac296ac5ba41e793aaa6da98c799e3ae9449a06b2f7110b262fdd403b4db7 # shrinks to (s, c, sel) = ("\rxyz 😀", ChangeSet { ops: [Delete(4), Insert("\n老\naé\n\naéa\naa\né\naaéé\naa\naé\naafhkpt\nét\né老lé老\nrp\n老fé"), Retain(5)], len_before: 9, len_after: 73 }, Selection { ranges: [Range { anchor: 5, head: 3, goal_column: None }], primary: 0 })
