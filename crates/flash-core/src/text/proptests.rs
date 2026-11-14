@@ -242,3 +242,30 @@ proptest! {
         assert_equivalent(&t, &RefText::new(&pieces.concat()))?;
     }
 }
+
+proptest! {
+    /// `Text::graphemes` from every char boundary, both directions, yields
+    /// exactly the reference model's clusters (the first one partial if the
+    /// start is inside a cluster).
+    #[test]
+    fn graphemes_match_reference(s in text_strategy(30)) {
+        let t = Text::from(s.as_str());
+        let bounds = RefText::new(&s).grapheme_boundaries();
+        for h in (0..=s.len()).filter(|&h| s.is_char_boundary(h)) {
+            for dir in [Direction::Forward, Direction::Backward] {
+                let mut want = Vec::new();
+                let mut p = h;
+                loop {
+                    let q = move_over_boundaries(&bounds, p, 1, dir);
+                    if q == p {
+                        break;
+                    }
+                    want.push(&s[p.min(q)..p.max(q)]);
+                    p = q;
+                }
+                let got: Vec<String> = t.graphemes(h, dir).unwrap().map(|g| g.into_owned()).collect();
+                prop_assert_eq!(got, want, "{:?} from {}", dir, h);
+            }
+        }
+    }
+}

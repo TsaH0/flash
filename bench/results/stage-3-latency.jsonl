@@ -1,0 +1,85 @@
+{"fixture":"small","op":"insert+delete char (owned)","p50_ns":142,"p95_ns":168,"p99_ns":181,"max_ns":9733,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"insert char (after snapshot)","p50_ns":246,"p95_ns":438,"p99_ns":464,"max_ns":5020,"allocs_per_op":5.992,"bytes_per_op":3339.6}
+{"fixture":"small","op":"delete <=16B (after snapshot)","p50_ns":207,"p95_ns":311,"p99_ns":334,"max_ns":3762,"allocs_per_op":4.009,"bytes_per_op":2327.1}
+{"fixture":"small","op":"replace <=16B (after snapshot)","p50_ns":235,"p95_ns":473,"p99_ns":505,"max_ns":7049,"allocs_per_op":5.268,"bytes_per_op":2969.8}
+{"fixture":"small","op":"line_of_offset","p50_ns":68,"p95_ns":83,"p99_ns":89,"max_ns":2261,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"line_range","p50_ns":90,"p95_ns":112,"p99_ns":119,"max_ns":2440,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"is_grapheme_boundary","p50_ns":41,"p95_ns":57,"p99_ns":61,"max_ns":126,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"move_graphemes 1 fwd","p50_ns":72,"p95_ns":84,"p99_ns":91,"max_ns":1506,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"move_graphemes 16 fwd","p50_ns":356,"p95_ns":386,"p99_ns":415,"max_ns":6097,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"move_graphemes 16 back","p50_ns":226,"p95_ns":247,"p99_ns":284,"max_ns":4895,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"changeset 1 edit apply (after snapshot)","p50_ns":225,"p95_ns":363,"p99_ns":483,"max_ns":5535,"allocs_per_op":4.341,"bytes_per_op":2504.1}
+{"fixture":"small","op":"txn insert char (1 cursor)","p50_ns":399,"p95_ns":582,"p99_ns":611,"max_ns":6172,"allocs_per_op":6.992,"bytes_per_op":3411.6}
+{"fixture":"small","op":"txn backspace (1 cursor)","p50_ns":365,"p95_ns":470,"p99_ns":499,"max_ns":3779,"allocs_per_op":5.249,"bytes_per_op":2535.8}
+{"fixture":"small","op":"motion right","p50_ns":87,"p95_ns":99,"p99_ns":107,"max_ns":2628,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"motion down","p50_ns":1083,"p95_ns":2067,"p99_ns":2527,"max_ns":11882,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"motion word forward","p50_ns":229,"p95_ns":448,"p99_ns":567,"max_ns":4827,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"snapshot+drop","p50_ns":26,"p95_ns":27,"p99_ns":28,"max_ns":1998,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"insert+delete char (owned)","p50_ns":382,"p95_ns":459,"p99_ns":516,"max_ns":5858,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"insert char (after snapshot)","p50_ns":917,"p95_ns":1076,"p99_ns":1166,"max_ns":11892,"allocs_per_op":18.423,"bytes_per_op":5229.9}
+{"fixture":"medium","op":"delete <=16B (after snapshot)","p50_ns":516,"p95_ns":578,"p99_ns":663,"max_ns":11119,"allocs_per_op":7.548,"bytes_per_op":2413.7}
+{"fixture":"medium","op":"replace <=16B (after snapshot)","p50_ns":882,"p95_ns":1142,"p99_ns":1225,"max_ns":12740,"allocs_per_op":14.163,"bytes_per_op":4143.4}
+{"fixture":"medium","op":"line_of_offset","p50_ns":129,"p95_ns":162,"p99_ns":216,"max_ns":3809,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"line_range","p50_ns":325,"p95_ns":389,"p99_ns":458,"max_ns":11596,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"is_grapheme_boundary","p50_ns":105,"p95_ns":135,"p99_ns":150,"max_ns":5141,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"move_graphemes 1 fwd","p50_ns":130,"p95_ns":160,"p99_ns":174,"max_ns":2859,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"move_graphemes 16 fwd","p50_ns":414,"p95_ns":460,"p99_ns":592,"max_ns":12802,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"move_graphemes 16 back","p50_ns":290,"p95_ns":327,"p99_ns":465,"max_ns":3853,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"changeset 1 edit apply (after snapshot)","p50_ns":657,"p95_ns":994,"p99_ns":1271,"max_ns":11231,"allocs_per_op":8.617,"bytes_per_op":2716.8}
+{"fixture":"medium","op":"txn insert char (1 cursor)","p50_ns":1381,"p95_ns":1582,"p99_ns":1669,"max_ns":11443,"allocs_per_op":19.423,"bytes_per_op":5301.9}
+{"fixture":"medium","op":"txn backspace (1 cursor)","p50_ns":1147,"p95_ns":1319,"p99_ns":1424,"max_ns":26500,"allocs_per_op":9.002,"bytes_per_op":2626.6}
+{"fixture":"medium","op":"motion right","p50_ns":233,"p95_ns":296,"p99_ns":348,"max_ns":10634,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"motion down","p50_ns":1884,"p95_ns":2885,"p99_ns":3292,"max_ns":23467,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"motion word forward","p50_ns":652,"p95_ns":1135,"p99_ns":1371,"max_ns":25969,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"snapshot+drop","p50_ns":35,"p95_ns":44,"p99_ns":45,"max_ns":5790,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"insert+delete char (owned)","p50_ns":1118,"p95_ns":2407,"p99_ns":2894,"max_ns":26186,"allocs_per_op":1.294,"bytes_per_op":930.7}
+{"fixture":"large","op":"insert char (after snapshot)","p50_ns":1776,"p95_ns":2015,"p99_ns":2136,"max_ns":22230,"allocs_per_op":26.927,"bytes_per_op":6002.0}
+{"fixture":"large","op":"delete <=16B (after snapshot)","p50_ns":1165,"p95_ns":1455,"p99_ns":1633,"max_ns":20324,"allocs_per_op":9.430,"bytes_per_op":2696.0}
+{"fixture":"large","op":"replace <=16B (after snapshot)","p50_ns":1753,"p95_ns":2113,"p99_ns":2264,"max_ns":74067,"allocs_per_op":20.006,"bytes_per_op":4721.5}
+{"fixture":"large","op":"line_of_offset","p50_ns":458,"p95_ns":654,"p99_ns":762,"max_ns":21698,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"line_range","p50_ns":756,"p95_ns":950,"p99_ns":1065,"max_ns":11919,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"is_grapheme_boundary","p50_ns":364,"p95_ns":523,"p99_ns":624,"max_ns":11817,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"move_graphemes 1 fwd","p50_ns":393,"p95_ns":554,"p99_ns":659,"max_ns":10659,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"move_graphemes 16 fwd","p50_ns":694,"p95_ns":874,"p99_ns":1001,"max_ns":11800,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"move_graphemes 16 back","p50_ns":576,"p95_ns":759,"p99_ns":884,"max_ns":12832,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"changeset 1 edit apply (after snapshot)","p50_ns":1351,"p95_ns":1927,"p99_ns":2258,"max_ns":24844,"allocs_per_op":10.993,"bytes_per_op":3044.4}
+{"fixture":"large","op":"txn insert char (1 cursor)","p50_ns":2424,"p95_ns":2731,"p99_ns":2897,"max_ns":24792,"allocs_per_op":27.927,"bytes_per_op":6074.0}
+{"fixture":"large","op":"txn backspace (1 cursor)","p50_ns":2026,"p95_ns":2362,"p99_ns":2550,"max_ns":67273,"allocs_per_op":11.001,"bytes_per_op":2926.6}
+{"fixture":"large","op":"motion right","p50_ns":540,"p95_ns":737,"p99_ns":855,"max_ns":10168,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"motion down","p50_ns":2700,"p95_ns":3758,"p99_ns":4204,"max_ns":12127,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"motion word forward","p50_ns":797,"p95_ns":1107,"p99_ns":1277,"max_ns":22761,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"snapshot+drop","p50_ns":28,"p95_ns":29,"p99_ns":29,"max_ns":3655,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"insert+delete char (owned)","p50_ns":382,"p95_ns":454,"p99_ns":502,"max_ns":5554,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"insert char (after snapshot)","p50_ns":930,"p95_ns":1095,"p99_ns":1180,"max_ns":12466,"allocs_per_op":18.412,"bytes_per_op":5229.5}
+{"fixture":"one-line","op":"delete <=16B (after snapshot)","p50_ns":516,"p95_ns":588,"p99_ns":678,"max_ns":13635,"allocs_per_op":7.547,"bytes_per_op":2414.0}
+{"fixture":"one-line","op":"replace <=16B (after snapshot)","p50_ns":896,"p95_ns":1146,"p99_ns":1228,"max_ns":66558,"allocs_per_op":14.179,"bytes_per_op":4145.0}
+{"fixture":"one-line","op":"line_of_offset","p50_ns":134,"p95_ns":164,"p99_ns":187,"max_ns":25482,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"line_range","p50_ns":84,"p95_ns":87,"p99_ns":104,"max_ns":2000,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"is_grapheme_boundary","p50_ns":104,"p95_ns":133,"p99_ns":148,"max_ns":2153,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"move_graphemes 1 fwd","p50_ns":129,"p95_ns":157,"p99_ns":171,"max_ns":2104,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"move_graphemes 16 fwd","p50_ns":408,"p95_ns":446,"p99_ns":582,"max_ns":3233,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"move_graphemes 16 back","p50_ns":277,"p95_ns":316,"p99_ns":450,"max_ns":2659,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"changeset 1 edit apply (after snapshot)","p50_ns":658,"p95_ns":985,"p99_ns":1237,"max_ns":19175,"allocs_per_op":8.618,"bytes_per_op":2717.4}
+{"fixture":"one-line","op":"txn insert char (1 cursor)","p50_ns":1398,"p95_ns":1586,"p99_ns":1669,"max_ns":13752,"allocs_per_op":19.412,"bytes_per_op":5301.5}
+{"fixture":"one-line","op":"txn backspace (1 cursor)","p50_ns":1146,"p95_ns":1309,"p99_ns":1405,"max_ns":19181,"allocs_per_op":9.002,"bytes_per_op":2626.7}
+{"fixture":"one-line","op":"motion right","p50_ns":232,"p95_ns":295,"p99_ns":360,"max_ns":10302,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"motion down","p50_ns":26416905,"p95_ns":50090629,"p99_ns":52241249,"max_ns":197574061,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"motion word forward","p50_ns":420,"p95_ns":665,"p99_ns":790,"max_ns":4056,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"snapshot+drop","p50_ns":26,"p95_ns":27,"p99_ns":28,"max_ns":2204,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"insert+delete char (owned)","p50_ns":364,"p95_ns":434,"p99_ns":473,"max_ns":3829,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"insert char (after snapshot)","p50_ns":515,"p95_ns":1097,"p99_ns":1151,"max_ns":10317,"allocs_per_op":12.540,"bytes_per_op":3700.4}
+{"fixture":"unicode","op":"delete <=16B (after snapshot)","p50_ns":516,"p95_ns":572,"p99_ns":600,"max_ns":9098,"allocs_per_op":6.666,"bytes_per_op":2132.7}
+{"fixture":"unicode","op":"replace <=16B (after snapshot)","p50_ns":935,"p95_ns":1192,"p99_ns":1259,"max_ns":11957,"allocs_per_op":14.171,"bytes_per_op":4143.8}
+{"fixture":"unicode","op":"line_of_offset","p50_ns":133,"p95_ns":163,"p99_ns":176,"max_ns":3306,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"line_range","p50_ns":340,"p95_ns":393,"p99_ns":417,"max_ns":15230,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"is_grapheme_boundary","p50_ns":138,"p95_ns":175,"p99_ns":203,"max_ns":10423,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"move_graphemes 1 fwd","p50_ns":166,"p95_ns":262,"p99_ns":298,"max_ns":18965,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"move_graphemes 16 fwd","p50_ns":698,"p95_ns":983,"p99_ns":1196,"max_ns":3993,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"move_graphemes 16 back","p50_ns":563,"p95_ns":776,"p99_ns":955,"max_ns":3641,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"changeset 1 edit apply (after snapshot)","p50_ns":662,"p95_ns":1105,"p99_ns":1309,"max_ns":5413,"allocs_per_op":8.782,"bytes_per_op":2756.2}
+{"fixture":"unicode","op":"txn insert char (1 cursor)","p50_ns":1004,"p95_ns":1591,"p99_ns":1682,"max_ns":9876,"allocs_per_op":13.540,"bytes_per_op":3772.4}
+{"fixture":"unicode","op":"txn backspace (1 cursor)","p50_ns":1213,"p95_ns":1388,"p99_ns":1495,"max_ns":66506,"allocs_per_op":9.005,"bytes_per_op":2629.2}
+{"fixture":"unicode","op":"motion right","p50_ns":269,"p95_ns":368,"p99_ns":420,"max_ns":2986,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"motion down","p50_ns":2038,"p95_ns":3160,"p99_ns":3692,"max_ns":18444,"allocs_per_op":0.029,"bytes_per_op":0.4}
+{"fixture":"unicode","op":"motion word forward","p50_ns":607,"p95_ns":1103,"p99_ns":1478,"max_ns":4517,"allocs_per_op":0.009,"bytes_per_op":0.1}
+{"fixture":"unicode","op":"snapshot+drop","p50_ns":26,"p95_ns":27,"p99_ns":28,"max_ns":76,"allocs_per_op":0.000,"bytes_per_op":0.0}

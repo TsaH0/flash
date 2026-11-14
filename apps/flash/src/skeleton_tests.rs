@@ -157,3 +157,85 @@ fn set_selection_validates() {
     assert!(sk.set_selection(Selection::point(2)).is_ok());
     assert_eq!(heads(&sk), [2]);
 }
+
+/// Random keys, pastes, and resizes over Unicode-heavy texts: never panics,
+/// the selection stays valid, and no raw control byte from the text reaches
+/// the output (BEL never appears; ESC only as crossterm's own CSI).
+#[test]
+fn random_events_never_panic() {
+    const PIECES: &[&str] = &[
+        "a",
+        "xyz ",
+        "\n",
+        "\r\n",
+        "\r",
+        "\t",
+        "é",
+        "e\u{301}",
+        "老虎",
+        "😀",
+        "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}",
+        "\u{1F1FA}\u{1F1F8}",
+        "\u{7}",
+        "\u{1b}[31m",
+    ];
+    let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+    let mut next = |n: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed % n) as usize
+    };
+    let codes = [
+        KeyCode::Left,
+        KeyCode::Right,
+        KeyCode::Up,
+        KeyCode::Down,
+        KeyCode::Home,
+        KeyCode::End,
+        KeyCode::Backspace,
+        KeyCode::Delete,
+        KeyCode::Enter,
+        KeyCode::Tab,
+        KeyCode::Esc,
+        KeyCode::Char('x'),
+        KeyCode::Char('é'),
+        KeyCode::Char('\u{301}'),
+    ];
+    let mods = [
+        KeyModifiers::NONE,
+        KeyModifiers::SHIFT,
+        KeyModifiers::CONTROL,
+        KeyModifiers::ALT,
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    ];
+    for _ in 0..200 {
+        let text: String = (0..next(40))
+            .map(|_| PIECES[next(PIECES.len() as u64)])
+            .collect();
+        let mut sk = Skeleton::new(
+            "t".to_owned(),
+            Text::from(text.as_str()),
+            1 + next(30) as u16,
+            1 + next(8) as u16,
+        );
+        for _ in 0..100 {
+            let event = match next(20) {
+                0 => Event::Paste(PIECES[next(PIECES.len() as u64)].to_owned()),
+                1 => Event::Resize(next(6) as u16, next(4) as u16),
+                _ => key(
+                    codes[next(codes.len() as u64)],
+                    mods[next(mods.len() as u64)],
+                ),
+            };
+            sk.handle(&event);
+            assert_eq!(sk.selection().validate(sk.text()), Ok(()));
+            let out = rendered(&mut sk);
+            assert!(!out.contains(&0x07), "raw BEL after {event:?}");
+            assert!(
+                !out.windows(5).any(|w| w == b"\x1b[31m"),
+                "raw SGR after {event:?}"
+            );
+        }
+    }
+}
