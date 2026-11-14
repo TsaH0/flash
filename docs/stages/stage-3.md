@@ -289,8 +289,10 @@ On ordinary text one event costs at most about 0.2 ms p99, almost all of it
 the full redraw (it doubles from 80×24 to 200×60). The one-line tail is the
 `End` key (5% of the trace): the status line computes the cursor's column by
 walking the 1 MB line. The interactive number (real terminal, `read` →
-`flush`) needs a TTY and is pending the owner's smoke test (`FLASH_LATENCY_LOG`, see
-main.rs); it will be added here when run.
+`flush`) needs a TTY. Owner smoke test, 2026-11-15, in a real terminal: typing,
+motions, selections, multi-cursor, and quit all worked, and the terminal was
+restored. The latency log (`FLASH_LATENCY_LOG`) was not produced on that
+run, so there is no interactive number yet.
 
 ## G. Review
 
@@ -336,7 +338,7 @@ ledger):
   lookup".
 - Small skeleton API additions.
 - File-name sanitising.
-- The TTY smoke test left to the owner.
+- The TTY smoke test left to the owner (done 2026-11-15: works).
 
 Deferred minors:
 

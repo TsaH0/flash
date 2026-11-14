@@ -38,8 +38,9 @@ Updated: 2026-11-15, end of Stage 3 (awaiting owner approval).
 
 ## Implemented but not fully verified
 
-- The skeleton in a real terminal (no TTY in the sandbox): owner smoke test
-  pending; see [stage-3.md](stages/stage-3.md) section F.
+- The skeleton's real-terminal latency: the owner's smoke test passed
+  (2026-11-15), but no interactive latency log was captured; see
+  [stage-3.md](stages/stage-3.md) section F.
 - Stage 3 had no independent fresh-context review (dispatch was refused by
   the session's permission policy); the implementer's adversarial pass is in
   stage-3.md section G.
