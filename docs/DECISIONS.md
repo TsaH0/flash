@@ -237,3 +237,44 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
   input, so normalising after a motion or edit is O(k).
 - **Reopen if:** Stage 7 modes need a different merge direction, or markers
   (Stage 8) need different edge behaviour (they get their own `Assoc`).
+
+## 012 — Display width, word classes, and grapheme iteration
+
+- **Date:** 2026-11-14 (Stage 3)
+- **Decision:**
+  - *Width:* a grapheme takes `UnicodeWidthStr::width` cells (unicode-width
+    0.2: CJK and ZWJ emoji 2, combining sequences 1, ZWSP 0, controls 1); a
+    tab advances to the next multiple of the tab width. Renderers draw a
+    control character as U+FFFD in its one cell, never raw.
+  - *Word classes* by a grapheme's first char: whitespace (incl. `\n`,
+    `\r\n`, `\t`), word (alphanumeric or `_`), punctuation. Forward word
+    motion skips the head's run (unless whitespace) then whitespace;
+    backward skips whitespace then the run before it.
+  - *Vertical motion* keeps a goal display column on the range; on the
+    target line it lands on the start of the first non-zero-width grapheme
+    covering the goal, else the line's content end. Line index clamps.
+  - *Grapheme iteration:* `Text::graphemes(offset, direction)` steps with
+    the same cursor-reuse rule as `move_graphemes` (DECISIONS 008), which
+    now uses it. crop's `RopeSlice::graphemes` is not used.
+- **Evidence:** the motion property tests against a whole-string model
+  found two bugs in crop 0.4.3's `Graphemes` iterator on texts whose leaf
+  gap splits them into two chunks (default leaf size):
+  1. Backward, after a `PrevChunk` request, it computes the new chunk's
+     start as `cursor.cur_cursor() - chunk.len()`, but the cursor has not
+     moved, so offsets drift: "attempt to subtract with overflow" in
+     `iterators.rs`, e.g. iterating `..33` of
+     `"aa老虎老虎老虎é😀\u{200d}👨\u{200d}👩\u{200d}👧a"` backward.
+  2. Forward, it carries one `GraphemeCursor` across chunks for the whole
+     walk, and splits a regional-indicator pair that straddles the chunk
+     boundary (`0..27` of `"🇯\u{200d}é🇯\r🇯\r🇺🇸\né🇺🇸老虎\r\n"` yields
+     `"🇺", "🇸"`): the failure class already recorded in 008.
+  `text/tests.rs::graphemes_match_reference_boundaries` pins both texts.
+- **Alternatives:** patch crop's iterator (bug 1 is one line; bug 2 is
+  the cursor-reuse design, so a second fork of crop's logic); iterate via
+  repeated `move_graphemes(_, 1, _)` (an O(log n) descent per grapheme);
+  char-based word classes (split combining marks from their base);
+  `unicode-segmentation` word bounds (no word/punctuation distinction).
+- **Trade-off:** one more iterator to maintain in `Text`, sharing its core
+  with `move_graphemes`.
+- **Reopen if:** crop fixes `Graphemes` upstream, or Stage 7 makes the word
+  definition an option (PLAN 2.11).

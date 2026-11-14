@@ -28,6 +28,8 @@ unicode-segmentation.workspace = true
 compact_str.workspace = true
 # Inline storage for the common single-range selection.
 smallvec.workspace = true
+# Display columns for vertical motion and rendering.
+unicode-width.workspace = true
 arbitrary = { workspace = true, optional = true }
 
 [dev-dependencies]

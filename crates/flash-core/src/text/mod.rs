@@ -36,6 +36,7 @@
 //! `pub(crate)`: outside this crate, text changes only through the document's
 //! transaction mechanism (docs/PLAN.md 2.2, 2.6).
 
+use std::borrow::Cow;
 use std::fmt;
 use std::ops::Range;
 
@@ -111,6 +112,84 @@ struct Chunk<'a> {
 impl Chunk<'_> {
     fn end(&self) -> usize {
         self.start + self.text.len()
+    }
+}
+
+/// Iterator over grapheme clusters from a position; see [`Text::graphemes`].
+pub struct Graphemes<'a> {
+    text: &'a Text,
+    position: usize,
+    direction: Direction,
+    /// Cursor and chunk reused by consecutive steps that stay inside the
+    /// chunk. `None` means the next step starts fresh at `position`.
+    reuse: Option<(GraphemeCursor, Chunk<'a>)>,
+}
+
+impl Graphemes<'_> {
+    /// The boundary the walk has reached.
+    pub fn position(&self) -> usize {
+        self.position
+    }
+
+    /// Moves one cluster and returns the new position, or `None` at the
+    /// edge of the text.
+    fn step(&mut self) -> Option<usize> {
+        let text = self.text;
+        let len = text.byte_len();
+        let direction = self.direction;
+        let position = self.position;
+        let at_edge = match direction {
+            Direction::Forward => position == len,
+            Direction::Backward => position == 0,
+        };
+        if at_edge {
+            return None;
+        }
+        let fast = match &mut self.reuse {
+            Some(state) => Some(state),
+            None => text.step_chunk(position, direction).map(|chunk| {
+                self.reuse
+                    .insert((GraphemeCursor::new(position, len, true), chunk))
+            }),
+        };
+        let step = fast.map(|(cursor, chunk)| match direction {
+            Direction::Forward => cursor.next_boundary(chunk.text, chunk.start),
+            Direction::Backward => cursor.prev_boundary(chunk.text, chunk.start),
+        });
+        let next = match step {
+            Some(Ok(next)) => next,
+            // The step needs bytes outside the current chunk. Redo it from
+            // `position` with a cursor that fetches what it asks for.
+            // Partial cursor state is not carried across chunks
+            // (DECISIONS 008).
+            Some(Err(_)) | None => {
+                self.reuse = None;
+                text.grapheme_step(position, direction)
+            }
+        };
+        let Some(next) = next else {
+            debug_assert!(false, "grapheme step from {position} found no boundary");
+            return None;
+        };
+        self.position = next;
+        // At a chunk edge, the next step starts with the adjacent chunk.
+        if let Some((_, chunk)) = &self.reuse {
+            if next == chunk.start || next == chunk.end() {
+                self.reuse = None;
+            }
+        }
+        Some(next)
+    }
+}
+
+impl<'a> Iterator for Graphemes<'a> {
+    type Item = Cow<'a, str>;
+
+    fn next(&mut self) -> Option<Cow<'a, str>> {
+        let chunk = self.reuse.as_ref().map(|(_, c)| *c);
+        let from = self.position;
+        let to = self.step()?;
+        Some(self.text.piece(from.min(to)..from.max(to), chunk))
     }
 }
 
@@ -227,53 +306,61 @@ impl Text {
         count: usize,
         direction: Direction,
     ) -> Result<usize, TextError> {
-        self.check_offset(offset)?;
-        let len = self.byte_len();
-        let forward = direction == Direction::Forward;
-        let at_edge = |p: usize| if forward { p == len } else { p == 0 };
-
-        let mut position = offset;
-        // Cursor and chunk reused by consecutive steps that stay inside the
-        // chunk. `None` means the next step starts fresh at `position`.
-        let mut reuse: Option<(GraphemeCursor, Chunk<'_>)> = None;
+        let mut steps = self.graphemes(offset, direction)?;
         for _ in 0..count {
-            if at_edge(position) {
+            if steps.step().is_none() {
                 break;
-            }
-            let fast = match &mut reuse {
-                Some(state) => Some(state),
-                None => self
-                    .step_chunk(position, direction)
-                    .map(|chunk| reuse.insert((GraphemeCursor::new(position, len, true), chunk))),
-            };
-            let step = fast.map(|(cursor, chunk)| match direction {
-                Direction::Forward => cursor.next_boundary(chunk.text, chunk.start),
-                Direction::Backward => cursor.prev_boundary(chunk.text, chunk.start),
-            });
-            let next = match step {
-                Some(Ok(next)) => next,
-                // The step needs bytes outside the current chunk. Redo it
-                // from `position` with a cursor that fetches what it asks
-                // for. Partial cursor state is not carried across chunks
-                // (DECISIONS 008).
-                Some(Err(_)) | None => {
-                    reuse = None;
-                    self.grapheme_step(position, direction)
-                }
-            };
-            let Some(next) = next else {
-                debug_assert!(false, "grapheme step from {position} found no boundary");
-                break;
-            };
-            position = next;
-            // At a chunk edge, the next step starts with the adjacent chunk.
-            if let Some((_, chunk)) = &reuse {
-                if position == chunk.start || position == chunk.end() {
-                    reuse = None;
-                }
             }
         }
-        Ok(position)
+        Ok(steps.position)
+    }
+
+    /// Iterates extended grapheme clusters from `offset` in `direction`, to
+    /// the end (or start) of the text. Going backward, clusters come last
+    /// first.
+    ///
+    /// `offset` must be a valid position. Clusters are those of the whole
+    /// text: if `offset` is inside one, the first item is the part of it
+    /// between `offset` and the nearest boundary in `direction`.
+    ///
+    /// Starting costs O(log n); each item is O(1) within a rope chunk and
+    /// O(log n) across one, like [`Text::move_graphemes`]. An item is
+    /// borrowed unless it spans two chunks. Never panics.
+    ///
+    /// crop's own `RopeSlice::graphemes` is not used: in crop 0.4.3 it
+    /// mis-tracks chunk offsets going backward and splits regional-indicator
+    /// pairs that cross a chunk boundary (DECISIONS 012).
+    pub fn graphemes(
+        &self,
+        offset: usize,
+        direction: Direction,
+    ) -> Result<Graphemes<'_>, TextError> {
+        self.check_offset(offset)?;
+        Ok(Graphemes {
+            text: self,
+            position: offset,
+            direction,
+            reuse: None,
+        })
+    }
+
+    /// The text of `range` (non-empty, valid): borrowed from `chunk` or the
+    /// chunk containing its start if one holds all of it, else owned.
+    fn piece<'a>(&'a self, range: Range<usize>, chunk: Option<Chunk<'a>>) -> Cow<'a, str> {
+        let holds = |c: &Chunk<'a>| c.start <= range.start && range.end <= c.end();
+        match chunk
+            .filter(holds)
+            .or_else(|| self.chunk_at(range.start).filter(holds))
+        {
+            Some(c) => Cow::Borrowed(&c.text[range.start - c.start..range.end - c.start]),
+            None => match self.slice(range) {
+                Ok(slice) => Cow::Owned(slice.to_string()),
+                Err(e) => {
+                    debug_assert!(false, "grapheme piece outside the text: {e}");
+                    Cow::Borrowed("")
+                }
+            },
+        }
     }
 
     /// The chunk containing byte `byte`, or `None` if `byte >= byte_len()`.

@@ -510,3 +510,43 @@ fn error_messages() {
         "byte offset 3 is not on a UTF-8 character boundary"
     );
 }
+
+/// `Text::graphemes` from every char boundary, both directions, against the
+/// reference model's grapheme boundaries, on texts crop splits into several
+/// chunks (one splits a regional-indicator pair). crop 0.4.3's own
+/// `RopeSlice::graphemes` fails both (DECISIONS 012).
+#[test]
+fn graphemes_match_reference_boundaries() {
+    use super::reference::{RefText, move_over_boundaries};
+    for s in [
+        "aa老虎老虎老虎é😀\u{200d}👨\u{200d}👩\u{200d}👧a",
+        "🇯\u{200d}é🇯\r🇯\r🇺🇸\né🇺🇸老虎\r\n",
+    ] {
+        let t = Text::from(s);
+        let bounds = RefText::new(s).grapheme_boundaries();
+        for h in (0..=s.len()).filter(|&h| s.is_char_boundary(h)) {
+            for dir in [Direction::Forward, Direction::Backward] {
+                let mut want = Vec::new();
+                let mut p = h;
+                loop {
+                    let q = move_over_boundaries(&bounds, p, 1, dir);
+                    if q == p {
+                        break;
+                    }
+                    want.push(s[p.min(q)..p.max(q)].to_owned());
+                    p = q;
+                }
+                let got: Vec<String> = t
+                    .graphemes(h, dir)
+                    .unwrap()
+                    .map(|g| g.into_owned())
+                    .collect();
+                assert_eq!(got, want, "{dir:?} from {h} of {s:?}");
+            }
+        }
+    }
+    assert_eq!(
+        Text::from("é").graphemes(1, Direction::Forward).err(),
+        Some(TextError::NotCharBoundary { offset: 1 })
+    );
+}

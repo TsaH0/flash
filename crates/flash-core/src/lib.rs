@@ -7,8 +7,10 @@
 #![forbid(unsafe_code)]
 
 pub mod changeset;
+pub mod motion;
 pub mod selection;
 pub mod text;
+pub mod width;
 
 #[cfg(test)]
 mod strategies;
@@ -20,5 +22,6 @@ pub mod fuzzing;
 pub mod internals;
 
 pub use changeset::{Assoc, ChangeSet, ChangeSetBuilder, ChangeSetError, Op};
+pub use motion::{Motion, Movement};
 pub use selection::{Range, Selection, SelectionError};
 pub use text::{Direction, Text, TextBuilder, TextError, TextSlice};
