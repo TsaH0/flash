@@ -27,6 +27,7 @@ use std::fmt;
 
 use compact_str::CompactString;
 
+mod apply;
 mod builder;
 
 #[cfg(test)]

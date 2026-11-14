@@ -6,7 +6,8 @@ use proptest::prelude::*;
 
 use super::reference::apply_ops;
 use super::*;
-use crate::strategies::{changeset_for, raw_ops_for, text_strategy};
+use crate::Text;
+use crate::strategies::{changeset_for, floor_boundary, raw_ops_for, text_strategy};
 
 /// Checks canonical-form rules 1–4 from the module docs.
 pub(crate) fn assert_canonical(c: &ChangeSet) -> Result<(), TestCaseError> {
@@ -74,5 +75,77 @@ proptest! {
         assert_canonical(&c)?;
         prop_assert_eq!(c.len_before(), s.len());
         prop_assert_eq!(apply_ops(c.ops(), &s).len(), c.len_after());
+    }
+}
+
+type ApplyFn = fn(&ChangeSet, &mut Text) -> Result<(), ChangeSetError>;
+
+const STRATEGIES: [(&str, ApplyFn); 3] = [
+    ("apply", ChangeSet::apply),
+    ("apply_per_op", ChangeSet::apply_per_op),
+    ("apply_rebuild", ChangeSet::apply_rebuild),
+];
+
+/// `u`, or (if `same_len`) `u` cut or padded with 'a' to exactly `len`
+/// bytes, so its char boundaries differ from the text a change set was made
+/// for while its length matches.
+fn other_text(u: String, len: usize, same_len: bool) -> String {
+    if !same_len {
+        return u;
+    }
+    let mut u = u;
+    u.truncate(floor_boundary(&u, len));
+    while u.len() < len {
+        u.push('a');
+    }
+    u
+}
+
+proptest! {
+    #[test]
+    fn apply_matches_reference((s, c) in text_and_changeset()) {
+        let want = apply_ops(c.ops(), &s);
+        for (name, strategy) in STRATEGIES {
+            let mut t = Text::from(s.as_str());
+            prop_assert_eq!(strategy(&c, &mut t), Ok(()), "{}", name);
+            prop_assert_eq!(t.to_string(), want.as_str(), "{}", name);
+        }
+    }
+
+    #[test]
+    fn invert_round_trips((s, c) in text_and_changeset()) {
+        let t = Text::from(s.as_str());
+        let mut t2 = t.clone();
+        c.apply(&mut t2).unwrap();
+        let inv = c.invert(&t).unwrap();
+        assert_canonical(&inv)?;
+        prop_assert_eq!(inv.len_before(), c.len_after());
+        prop_assert_eq!(inv.len_after(), c.len_before());
+        let mut back = t2.clone();
+        inv.apply(&mut back).unwrap();
+        prop_assert_eq!(&back, &t);
+        prop_assert_eq!(inv.invert(&t2), Ok(c.clone()));
+    }
+
+    #[test]
+    fn invalid_changeset_leaves_text_unchanged(
+        (s, c) in text_and_changeset(),
+        u in text_strategy(20),
+        same_len in any::<bool>(),
+    ) {
+        let u = other_text(u, s.len(), same_len);
+        let original = Text::from(u.as_str());
+        let valid = c.validate(&original);
+        for (name, strategy) in STRATEGIES {
+            let mut t = original.clone();
+            let result = strategy(&c, &mut t);
+            prop_assert_eq!(result, valid, "{}", name);
+            if valid.is_ok() {
+                prop_assert_eq!(t.to_string(), apply_ops(c.ops(), &u), "{}", name);
+            } else {
+                prop_assert_eq!(&t, &original, "{} changed the text", name);
+            }
+        }
+        prop_assert_eq!(c.invert(&original).map(|_| ()), valid);
     }
 }
