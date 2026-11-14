@@ -1,1 +1,17 @@
 /target
+
+# Editor / IDE
+/.idea
+/.vscode
+
+# Shell and tool dotfiles that ended up in the repo root
+/.bash_profile
+/.bashrc
+/.gitconfig
+/.profile
+/.ripgreprc
+/.zprofile
+/.zshrc
+
+# Local archives
+/tree.zip

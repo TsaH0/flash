@@ -2,11 +2,15 @@
 //!
 //! # Coordinates
 //!
-//! Every position is a UTF-8 **byte offset** in `0..=len()`. An offset is
-//! *valid* when it is in bounds and lies on a `char` boundary. Every method
-//! that takes an offset or a range validates it and returns [`TextError`]
-//! instead of panicking; crop itself panics on bad offsets, so no crop call in
-//! this module is reachable with an unvalidated offset.
+//! Every position is a UTF-8 **byte offset** in `0..=byte_len()`. An offset
+//! names a position *between* bytes, like a cursor, not a byte: `"hi"` has
+//! positions 0 (before `h`), 1, and 2 (end of text), so `byte_len()` itself is
+//! a valid offset.
+//!
+//! An offset is *valid* when it is in bounds and lies on a `char` boundary.
+//! Every method that takes an offset or a range validates it and returns
+//! [`TextError`] instead of panicking; crop itself panics on bad offsets, so
+//! no crop call in this module is reachable with an unvalidated offset.
 //!
 //! # Line model
 //!
@@ -86,6 +90,30 @@ impl fmt::Display for TextError {
 
 impl std::error::Error for TextError {}
 
+/// Direction of a motion through a [`Text`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Direction {
+    /// Towards the end of the text (increasing offsets).
+    Forward,
+    /// Towards the start of the text (decreasing offsets).
+    Backward,
+}
+
+/// A contiguous, non-empty piece of the rope and the offset where it starts.
+/// Chunks tile the text: the one containing byte `b` ends where the one
+/// containing the next byte begins.
+#[derive(Clone, Copy)]
+struct Chunk<'a> {
+    text: &'a str,
+    start: usize,
+}
+
+impl Chunk<'_> {
+    fn end(&self) -> usize {
+        self.start + self.text.len()
+    }
+}
+
 /// Document text.
 ///
 /// Cloning is O(1): the clone shares the rope's tree, and later edits to
@@ -103,7 +131,7 @@ impl Text {
     }
 
     /// Byte length. O(1).
-    pub fn len(&self) -> usize {
+    pub fn byte_len(&self) -> usize {
         self.rope.byte_len()
     }
 
@@ -124,12 +152,12 @@ impl Text {
     /// Whether `offset` is a valid position: in bounds and on a `char`
     /// boundary. Never panics. O(log n).
     pub fn is_char_boundary(&self, offset: usize) -> bool {
-        offset <= self.len() && self.rope.is_char_boundary(offset)
+        offset <= self.byte_len() && self.rope.is_char_boundary(offset)
     }
 
     /// Returns `Ok(())` if `offset` is a valid position. O(log n).
     pub fn check_offset(&self, offset: usize) -> Result<(), TextError> {
-        let len = self.len();
+        let len = self.byte_len();
         if offset > len {
             return Err(TextError::OffsetOutOfBounds { offset, len });
         }
@@ -154,7 +182,7 @@ impl Text {
     }
 
     /// Whether `offset` lies on an extended grapheme cluster boundary.
-    /// Returns `false` for invalid offsets. Never panics.
+    /// Returns `false` for invalid offsets. Never panics. Never allocates.
     ///
     /// Cost is O(log n) plus the grapheme context needed, which is a few
     /// bytes except in pathological runs (e.g. thousands of consecutive
@@ -167,42 +195,146 @@ impl Text {
         if !self.is_char_boundary(offset) {
             return false;
         }
-        let len = self.len();
+        let len = self.byte_len();
         if offset == 0 || offset == len {
             return true;
         }
 
         let mut cursor = GraphemeCursor::new(offset, len, true);
-        // The chunk that starts exactly at `offset`; non-empty since offset < len.
-        let Some(chunk) = self
-            .rope
-            .byte_slice(offset..)
-            .chunks()
-            .find(|c| !c.is_empty())
-        else {
-            debug_assert!(false, "no chunk after an in-bounds offset");
-            return true;
-        };
-        // Context is supplied backwards from `offset` as the cursor asks.
-        let mut before = self.rope.byte_slice(..offset).chunks();
-        let mut before_start = offset;
+        let found = self.chunk_at(offset).and_then(|mut chunk| {
+            self.run_grapheme_query(&mut cursor, &mut chunk, GraphemeCursor::is_boundary)
+        });
+        debug_assert!(found.is_some(), "grapheme query left the text");
+        found.unwrap_or(true)
+    }
 
+    /// Moves `count` extended grapheme clusters from `offset` in
+    /// `direction` and returns the new offset, stopping early at the start
+    /// or end of the text. `count == 0` returns `offset` unchanged.
+    ///
+    /// `offset` must be a valid position (see [`Text::check_offset`]). It
+    /// need not be a grapheme boundary: the first step then lands on the
+    /// nearest boundary in `direction`. Every returned offset is a grapheme
+    /// boundary. Never panics. Never allocates.
+    ///
+    /// Cost is O(log n) to start, plus O(1) per step within a rope chunk and
+    /// O(log n) per chunk crossed: the grapheme cursor and its chunk are
+    /// reused between steps, so a counted motion is cheaper than `count`
+    /// separate one-step calls.
+    pub fn move_graphemes(
+        &self,
+        offset: usize,
+        count: usize,
+        direction: Direction,
+    ) -> Result<usize, TextError> {
+        self.check_offset(offset)?;
+        let len = self.byte_len();
+        let forward = direction == Direction::Forward;
+        let at_edge = |p: usize| if forward { p == len } else { p == 0 };
+
+        let mut position = offset;
+        // Cursor and chunk reused by consecutive steps that stay inside the
+        // chunk. `None` means the next step starts fresh at `position`.
+        let mut reuse: Option<(GraphemeCursor, Chunk<'_>)> = None;
+        for _ in 0..count {
+            if at_edge(position) {
+                break;
+            }
+            let fast = match &mut reuse {
+                Some(state) => Some(state),
+                None => self
+                    .step_chunk(position, direction)
+                    .map(|chunk| reuse.insert((GraphemeCursor::new(position, len, true), chunk))),
+            };
+            let step = fast.map(|(cursor, chunk)| match direction {
+                Direction::Forward => cursor.next_boundary(chunk.text, chunk.start),
+                Direction::Backward => cursor.prev_boundary(chunk.text, chunk.start),
+            });
+            let next = match step {
+                Some(Ok(next)) => next,
+                // The step needs bytes outside the current chunk. Redo it
+                // from `position` with a cursor that fetches what it asks
+                // for. Partial cursor state is not carried across chunks
+                // (DECISIONS 008).
+                Some(Err(_)) | None => {
+                    reuse = None;
+                    self.grapheme_step(position, direction)
+                }
+            };
+            let Some(next) = next else {
+                debug_assert!(false, "grapheme step from {position} found no boundary");
+                break;
+            };
+            position = next;
+            // At a chunk edge, the next step starts with the adjacent chunk.
+            if let Some((_, chunk)) = &reuse {
+                if position == chunk.start || position == chunk.end() {
+                    reuse = None;
+                }
+            }
+        }
+        Ok(position)
+    }
+
+    /// The chunk containing byte `byte`, or `None` if `byte >= byte_len()`.
+    /// O(log n), no allocation.
+    fn chunk_at(&self, byte: usize) -> Option<Chunk<'_>> {
+        self.rope
+            .chunk_at_byte(byte)
+            .map(|(text, start)| Chunk { text, start })
+    }
+
+    /// The chunk a grapheme step from `position` reads first: the one after
+    /// it going forward, the one before it going backward.
+    fn step_chunk(&self, position: usize, direction: Direction) -> Option<Chunk<'_>> {
+        match direction {
+            Direction::Forward => self.chunk_at(position),
+            Direction::Backward => self.chunk_at(position.checked_sub(1)?),
+        }
+    }
+
+    /// One grapheme step from `position`, which must not be at the edge of
+    /// the text in `direction`, with a fresh cursor. `None` only if the
+    /// grapheme cursor misbehaves.
+    fn grapheme_step(&self, position: usize, direction: Direction) -> Option<usize> {
+        let mut cursor = GraphemeCursor::new(position, self.byte_len(), true);
+        let mut chunk = self.step_chunk(position, direction)?;
+        let found = match direction {
+            Direction::Forward => {
+                self.run_grapheme_query(&mut cursor, &mut chunk, GraphemeCursor::next_boundary)
+            }
+            Direction::Backward => {
+                self.run_grapheme_query(&mut cursor, &mut chunk, GraphemeCursor::prev_boundary)
+            }
+        };
+        found.unwrap_or(None)
+    }
+
+    /// Runs one `GraphemeCursor` query to completion, fetching the chunks and
+    /// preceding context the cursor asks for. `chunk` must hold the bytes
+    /// the cursor reads first; afterwards it is the chunk the query ended in.
+    ///
+    /// Returns `None` only if the cursor asks for bytes outside the text,
+    /// which its contract rules out: it requests the next chunk only below
+    /// `byte_len()`, and earlier bytes only above 0.
+    fn run_grapheme_query<'a, T>(
+        &'a self,
+        cursor: &mut GraphemeCursor,
+        chunk: &mut Chunk<'a>,
+        mut query: impl FnMut(&mut GraphemeCursor, &str, usize) -> Result<T, GraphemeIncomplete>,
+    ) -> Option<T> {
         loop {
-            match cursor.is_boundary(chunk, offset) {
-                Ok(is_boundary) => return is_boundary,
+            match query(cursor, chunk.text, chunk.start) {
+                Ok(found) => return Some(found),
+                Err(GraphemeIncomplete::NextChunk) => *chunk = self.chunk_at(chunk.end())?,
+                Err(GraphemeIncomplete::PrevChunk) => {
+                    *chunk = self.chunk_at(chunk.start.checked_sub(1)?)?;
+                }
                 Err(GraphemeIncomplete::PreContext(end)) => {
-                    debug_assert_eq!(end, before_start);
-                    let Some(prev) = before.by_ref().rev().find(|c| !c.is_empty()) else {
-                        debug_assert!(false, "grapheme cursor asked for context before offset 0");
-                        return true;
-                    };
-                    before_start -= prev.len();
-                    cursor.provide_context(prev, before_start);
+                    let context = self.chunk_at(end.checked_sub(1)?)?;
+                    cursor.provide_context(&context.text[..end - context.start], context.start);
                 }
-                Err(other) => {
-                    debug_assert!(false, "unexpected grapheme cursor state: {other:?}");
-                    return true;
-                }
+                Err(GraphemeIncomplete::InvalidOffset) => return None,
             }
         }
     }
@@ -218,7 +350,7 @@ impl Text {
 
     fn newline_count(&self) -> usize {
         // crop's raw line metric at an offset counts the '\n' bytes before it.
-        self.rope.line_of_byte(self.len())
+        self.rope.line_of_byte(self.byte_len())
     }
 
     /// The line containing `offset`: the number of `'\n'` bytes before it.
@@ -246,13 +378,13 @@ impl Text {
     }
 
     /// Byte range of `line` including its terminator, if any. The ranges of
-    /// all lines tile `0..len()` without gaps. O(log n).
+    /// all lines tile `0..byte_len()` without gaps. O(log n).
     pub fn line_range_with_terminator(&self, line: usize) -> Result<Range<usize>, TextError> {
         let start = self.line_start(line)?;
         let end = if line + 1 < self.line_count() {
             self.rope.byte_of_line(line + 1)
         } else {
-            self.len()
+            self.byte_len()
         };
         Ok(start..end)
     }
@@ -486,8 +618,8 @@ pub struct Chunks<'a> {
 impl<'a> Iterator for Chunks<'a> {
     type Item = &'a str;
 
-    fn next(&mut self) -> Option<&'a str> {
-        self.inner.by_ref().find(|c| !c.is_empty())
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.find(|c| !c.is_empty())
     }
 }
 

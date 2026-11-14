@@ -21,7 +21,7 @@
 use proptest::prelude::*;
 use proptest::sample::Index;
 
-use super::reference::RefText;
+use super::reference::{RefText, move_over_boundaries};
 use super::*;
 
 const FULL_CHECK_LEN: usize = 600;
@@ -131,7 +131,7 @@ fn offsets_to_check(t: &Text, len: usize) -> Vec<usize> {
 /// Compares every query between the two implementations.
 fn assert_equivalent(t: &Text, r: &RefText) -> Result<(), TestCaseError> {
     prop_assert_eq!(t.to_string(), r.s.clone());
-    prop_assert_eq!(t.len(), r.len());
+    prop_assert_eq!(t.byte_len(), r.len());
     prop_assert_eq!(t.is_empty(), r.s.is_empty());
 
     let chunks: Vec<&str> = t.chunks().collect();
@@ -164,7 +164,41 @@ fn assert_equivalent(t: &Text, r: &RefText) -> Result<(), TestCaseError> {
         }
     }
 
+    // Grapheme motion: whole-text walks, then counted moves from every
+    // checked offset (expected values from the precomputed boundary list).
+    let bounds = r.grapheme_boundaries();
+    prop_assert_eq!(
+        t.move_graphemes(0, usize::MAX, Direction::Forward),
+        Ok(r.len())
+    );
+    prop_assert_eq!(
+        t.move_graphemes(r.len(), usize::MAX, Direction::Backward),
+        Ok(0)
+    );
+    let mut p = 0;
+    let mut walked = vec![p];
+    while p < r.len() {
+        p = t.move_graphemes(p, 1, Direction::Forward).unwrap();
+        walked.push(p);
+    }
+    prop_assert_eq!(&walked, &bounds);
+
     for offset in offsets_to_check(t, r.len()) {
+        for direction in [Direction::Forward, Direction::Backward] {
+            for count in [0, 1, 2, 5] {
+                let want = r
+                    .check_offset(offset)
+                    .map(|()| move_over_boundaries(&bounds, offset, count, direction));
+                prop_assert_eq!(
+                    t.move_graphemes(offset, count, direction),
+                    want,
+                    "move_graphemes({}, {}, {:?})",
+                    offset,
+                    count,
+                    direction
+                );
+            }
+        }
         prop_assert_eq!(
             t.check_offset(offset),
             r.check_offset(offset),

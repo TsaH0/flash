@@ -27,6 +27,8 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
   An upgrade must re-run the reference-model property tests deliberately.
 - **Reopen if:** a crop release fixes something we need (e.g. an O(log n)
   grapheme boundary or a chunk-at-offset accessor).
+- **Amended by 008:** the pinned 0.4.3 is now a vendored copy with one added
+  method; the version and every other line of source are unchanged.
 
 ## 003 — Line model: cursor rows
 
@@ -54,11 +56,10 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
   proportional to the distance from the offset to the end of the document.
   See `grapheme_boundary_at_start` in the Stage 1 benchmarks.
 - **Trade-off:** a direct dependency on `unicode-segmentation` (already in the
-  tree through crop, same version). About 4 allocations per call on
-  multi-leaf texts, because crop's chunk iterator allocates its traversal
-  stack.
-- **Reopen if:** Stage 3 cursor motion shows the allocation matters; then use
-  bounded windows or a chunk-at-offset accessor.
+  tree through crop, same version).
+- **Superseded in part by 008:** the cursor is now fed chunks from
+  `Rope::chunk_at_byte` instead of slice iterators, which removed the ~4
+  allocations per call the first version made.
 
 ## 005 — Every offset argument must be a char boundary
 
@@ -102,3 +103,37 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
   conversion (cost proportional to the line length, not the document).
 - **Reopen if:** most target language servers lack UTF-8 position encoding
   and per-line conversion shows up in Stage 10 latency measurements.
+
+## 008 — Vendored crop with `Rope::chunk_at_byte`; counted grapheme motion
+
+- **Date:** 2026-11-12 (Stage 1)
+- **Decision:** `vendor/crop` is crop 0.4.3 from crates.io plus one public
+  method, `Rope::chunk_at_byte(byte) -> Option<(&str, usize)>`, wired in with
+  `[patch.crates-io]`. The complete diff is `vendor/crop-chunk-at-byte.patch`
+  (22 added lines in `src/rope/rope.rs`; verified against the registry copy of
+  0.4.3). `Text::is_grapheme_boundary` and the new `Text::move_graphemes`
+  drive `GraphemeCursor` with chunks from it.
+- **Why:** crop 0.4.3 has no way to borrow the chunk at an offset except
+  through slice iterators, which allocate their traversal stack. The method
+  is a single descent of the tree (`leaf_at_measure`), O(log n), no allocation.
+- **Counted motion:** `move_graphemes(offset, count, direction)` reuses one
+  cursor and chunk while the steps stay inside the chunk. When a step needs
+  another chunk or earlier context, that step is redone from the last
+  boundary with a fresh cursor, and the next step starts fresh. Carrying a
+  cursor across chunks/context gives wrong offsets on regional-indicator
+  runs: injecting that variant fails four tests, shrinking to `"a🇺🇸"`.
+- **Evidence:** latency harness p50, same machine, before → after:
+
+  | op | 4 KB | 1 MB | 100 MB | unicode 1 MB |
+  |---|---|---|---|---|
+  | `is_grapheme_boundary` | 246 → 42 ns | 643 → 101 ns | 1283 → 378 ns | 686 → 135 ns |
+  | allocations per call | 0 → 0 | 3.9 → 0 | 4.0 → 0 | 3.9 → 0 |
+  | `move_graphemes` ×16 forward / backward | 319 / 196 ns | 378 / 255 ns | 684 / 608 ns | 675 / 545 ns |
+
+  One 16-step motion on 1 MB costs about three single-step calls (126 ns).
+- **Alternatives:** keep crop's iterators (allocating); fork crop as a git
+  dependency (network needed to build); bounded windows via `byte_slice`
+  (still allocates).
+- **Trade-off:** upgrading crop means re-applying the patch (or dropping it
+  if upstream adds an equivalent) and re-running the reference-model tests.
+- **Reopen if:** crop publishes a chunk-at-offset accessor.

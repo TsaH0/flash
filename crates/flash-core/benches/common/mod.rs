@@ -181,7 +181,7 @@ pub fn random_offsets(text: &Text, n: usize, seed: u64) -> Vec<usize> {
     let mut rng = Rng::new(seed);
     (0..n)
         .map(|_| {
-            let mut o = rng.below(text.len() + 1);
+            let mut o = rng.below(text.byte_len() + 1);
             while !text.is_char_boundary(o) {
                 o -= 1;
             }
@@ -201,7 +201,7 @@ pub fn random_ranges(
     random_offsets(text, n, seed ^ 0xABCD)
         .into_iter()
         .map(|start| {
-            let mut end = (start + rng.below(max_len + 1)).min(text.len());
+            let mut end = (start + rng.below(max_len + 1)).min(text.byte_len());
             while !text.is_char_boundary(end) {
                 end -= 1;
             }

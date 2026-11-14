@@ -1,0 +1,31 @@
+--- a/src/rope/rope.rs
++++ b/src/rope/rope.rs
+@@ -112,6 +112,28 @@
+         self.tree.summary().bytes()
+     }
+ 
++    /// Borrows the contiguous UTF-8 chunk containing `byte`, together with
++    /// its starting byte offset. Returns `None` at or past EOF.
++    ///
++    /// The two sides of a leaf's gap are distinct chunks.
++    #[inline]
++    pub fn chunk_at_byte(&self, byte: usize) -> Option<(&str, usize)> {
++        if byte >= self.byte_len() {
++            return None;
++        }
++
++        // The tree's metric lookup chooses the previous child at an exact
++        // boundary. Seeking to byte + 1 selects the leaf containing the byte.
++        let (leaf, ByteMetric(start)) =
++            self.tree.leaf_at_measure(ByteMetric(byte + 1));
++        let right_start = start + leaf.len_left();
++        if byte < right_start {
++            Some((leaf.left_chunk(), start))
++        } else {
++            Some((leaf.right_chunk(), right_start))
++        }
++    }
++
+     /// Returns the byte offset of the start of the given line.
+     ///
+     /// # Panics

@@ -11,8 +11,8 @@ use std::time::Duration;
 
 use common::{Fixture, random_offsets, random_ranges};
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use flash_core::Text;
 use flash_core::internals::{text_delete, text_insert, text_replace};
+use flash_core::{Direction, Text};
 
 const N: usize = 1024;
 
@@ -128,6 +128,13 @@ fn queries(c: &mut Criterion) {
         });
         g.bench_function("is_grapheme_boundary", |b| {
             b.iter(|| text.is_grapheme_boundary(offsets.next()))
+        });
+
+        g.bench_function("move_graphemes_16_fwd", |b| {
+            b.iter(|| text.move_graphemes(offsets.next(), 16, Direction::Forward))
+        });
+        g.bench_function("move_graphemes_16_back", |b| {
+            b.iter(|| text.move_graphemes(offsets.next(), 16, Direction::Backward))
         });
 
         g.bench_function("snapshot", |b| b.iter(|| black_box(text.snapshot())));

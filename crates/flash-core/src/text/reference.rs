@@ -9,7 +9,7 @@ use std::ops::Range;
 
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::TextError;
+use super::{Direction, TextError};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct RefText {
@@ -58,6 +58,28 @@ impl RefText {
             return false;
         }
         offset == self.s.len() || self.s.grapheme_indices(true).any(|(i, _)| i == offset)
+    }
+
+    /// Every grapheme boundary in increasing order: each cluster start, then `len`.
+    pub(crate) fn grapheme_boundaries(&self) -> Vec<usize> {
+        let mut bounds: Vec<usize> = self.s.grapheme_indices(true).map(|(i, _)| i).collect();
+        bounds.push(self.s.len());
+        bounds
+    }
+
+    pub(crate) fn move_graphemes(
+        &self,
+        offset: usize,
+        count: usize,
+        direction: Direction,
+    ) -> Result<usize, TextError> {
+        self.check_offset(offset)?;
+        Ok(move_over_boundaries(
+            &self.grapheme_boundaries(),
+            offset,
+            count,
+            direction,
+        ))
     }
 
     /// Start offset of every line: 0, then one past each '\n'.
@@ -122,4 +144,26 @@ impl RefText {
         self.s.replace_range(range, s);
         Ok(())
     }
+}
+
+/// Steps `count` times to the nearest boundary strictly after (or before)
+/// the current offset, stopping when there is none. `bounds` is sorted.
+pub(crate) fn move_over_boundaries(
+    bounds: &[usize],
+    offset: usize,
+    count: usize,
+    direction: Direction,
+) -> usize {
+    let mut p = offset;
+    for _ in 0..count {
+        let next = match direction {
+            Direction::Forward => bounds.get(bounds.partition_point(|&b| b <= p)),
+            Direction::Backward => bounds[..bounds.partition_point(|&b| b < p)].last(),
+        };
+        match next {
+            Some(&b) => p = b,
+            None => break,
+        }
+    }
+    p
 }

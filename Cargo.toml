@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/flash-core", "apps/flash"]
+# Vendored dependencies are patches, not workspace members.
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.1.0"
@@ -16,6 +18,12 @@ crop = { version = "=0.4.3", features = ["graphemes"] }
 unicode-segmentation = "1.13"
 proptest = "1.12"
 criterion = "0.8"
+
+[patch.crates-io]
+# crop 0.4.3 plus one method, `Rope::chunk_at_byte` (O(log n), no allocation),
+# used by Text's grapheme queries. The full diff against the published crate
+# is vendor/crop-chunk-at-byte.patch (DECISIONS 008).
+crop = { path = "vendor/crop" }
 
 [profile.bench]
 debug = true

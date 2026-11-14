@@ -20,8 +20,8 @@ use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::time::Instant;
 
 use common::{Fixture, random_offsets, random_ranges};
-use flash_core::Text;
 use flash_core::internals::{text_delete, text_insert, text_replace};
+use flash_core::{Direction, Text};
 
 struct Counting;
 
@@ -167,6 +167,20 @@ fn run_fixture(fx: &Fixture) -> Vec<Report> {
             black_box(base.is_grapheme_boundary(o));
         },
     ));
+    for (label, count, direction) in [
+        ("move_graphemes 1 fwd", 1, Direction::Forward),
+        ("move_graphemes 16 fwd", 16, Direction::Forward),
+        ("move_graphemes 16 back", 16, Direction::Backward),
+    ] {
+        out.push(measure(
+            name,
+            label,
+            |i| offsets[i],
+            |&mut o| {
+                black_box(base.move_graphemes(o, count, direction).unwrap());
+            },
+        ));
+    }
     out.push(measure(
         name,
         "snapshot+drop",

@@ -202,6 +202,132 @@ fn grapheme_boundary_needs_context_across_chunks() {
     }
 }
 
+/// Walks the whole text one grapheme at a time in `direction`.
+fn walk(t: &Text, direction: Direction) -> Vec<usize> {
+    let mut p = match direction {
+        Direction::Forward => 0,
+        Direction::Backward => t.byte_len(),
+    };
+    let mut seen = vec![p];
+    loop {
+        let next = t.move_graphemes(p, 1, direction).unwrap();
+        if next == p {
+            return seen;
+        }
+        seen.push(next);
+        p = next;
+    }
+}
+
+#[test]
+fn move_graphemes_visits_every_boundary() {
+    let cases = [
+        "",
+        "ab",
+        "a\r\nb",
+        "e\u{301}x",
+        "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}!",
+        "\u{1F1FA}\u{1F1F8}\u{1F1EF}\u{1F1F5}",
+        "\u{1100}\u{1161}\u{11A8}",
+    ];
+    for s in cases {
+        let t = Text::from(s);
+        let bounds = RefText::new(s).grapheme_boundaries();
+        assert_eq!(walk(&t, Direction::Forward), bounds, "{s:?} forward");
+        let mut backward = walk(&t, Direction::Backward);
+        backward.reverse();
+        assert_eq!(backward, bounds, "{s:?} backward");
+    }
+}
+
+#[test]
+fn move_graphemes_counts_clamps_and_validates() {
+    let s = "ae\u{301}\u{1F1FA}\u{1F1F8}b"; // a | é | flag | b
+    let t = Text::from(s);
+    let fwd = Direction::Forward;
+    let back = Direction::Backward;
+    assert_eq!(t.move_graphemes(0, 0, fwd), Ok(0));
+    assert_eq!(t.move_graphemes(0, 2, fwd), Ok(4));
+    assert_eq!(t.move_graphemes(0, 3, fwd), Ok(12));
+    assert_eq!(t.move_graphemes(0, 99, fwd), Ok(s.len()));
+    assert_eq!(t.move_graphemes(s.len(), 2, back), Ok(4));
+    assert_eq!(t.move_graphemes(s.len(), usize::MAX, back), Ok(0));
+    assert_eq!(t.move_graphemes(0, 1, back), Ok(0));
+    assert_eq!(t.move_graphemes(s.len(), 1, fwd), Ok(s.len()));
+    // From inside a cluster (between 'e' and the combining mark), the first
+    // step goes to the nearest boundary in that direction.
+    assert_eq!(t.move_graphemes(2, 1, fwd), Ok(4));
+    assert_eq!(t.move_graphemes(2, 1, back), Ok(1));
+    // Invalid offsets are rejected like everywhere else.
+    assert_eq!(
+        t.move_graphemes(3, 1, fwd),
+        Err(TextError::NotCharBoundary { offset: 3 })
+    );
+    assert_eq!(
+        t.move_graphemes(99, 0, back),
+        Err(TextError::OffsetOutOfBounds {
+            offset: 99,
+            len: s.len()
+        })
+    );
+}
+
+#[test]
+fn move_graphemes_across_chunks_with_long_context() {
+    // Regional-indicator pairing depends on every indicator back to the
+    // start of the run, so steps near chunk edges need context from many
+    // chunks behind. Both parities of the run's start are covered.
+    let flag = "\u{1F1FA}\u{1F1F8}";
+    for prefix in ["x", "\u{1F1EF}"] {
+        let s = format!("{prefix}{}y\n", flag.repeat(2_000));
+        let t = Text::from(s.as_str());
+        assert!(t.chunks().count() > 1, "fixture should span several chunks");
+        let r = RefText::new(&s);
+        let bounds = r.grapheme_boundaries();
+        assert_eq!(walk(&t, Direction::Forward), bounds);
+        for count in [1, 2, 3, 7, 64, 1_000] {
+            for start in (0..=s.len()).step_by(4 * 97) {
+                for direction in [Direction::Forward, Direction::Backward] {
+                    assert_eq!(
+                        t.move_graphemes(start, count, direction),
+                        r.move_graphemes(start, count, direction),
+                        "{prefix:?} start {start} count {count} {direction:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn move_graphemes_after_edits() {
+    // Edits split leaves into gap buffers with two chunks each; motion must
+    // see both sides.
+    let mut s = "fn main() { println!(\"héllo 😀\"); }\n".repeat(400);
+    let mut t = Text::from(s.as_str());
+    for i in 0..50 {
+        let at = (i * 7_919) % s.len();
+        let at = (0..=at).rev().find(|&o| s.is_char_boundary(o)).unwrap();
+        let piece = ["e\u{301}", "\u{1F1FA}\u{1F1F8}", "\r\n", "\u{200D}"][i % 4];
+        t.insert(at, piece).unwrap();
+        s.insert_str(at, piece);
+    }
+    let r = RefText::new(&s);
+    assert_eq!(walk(&t, Direction::Forward), r.grapheme_boundaries());
+    let mut backward = walk(&t, Direction::Backward);
+    backward.reverse();
+    assert_eq!(backward, r.grapheme_boundaries());
+    for start in (0..s.len()).filter(|&o| s.is_char_boundary(o)).step_by(31) {
+        for direction in [Direction::Forward, Direction::Backward] {
+            assert_eq!(
+                t.move_graphemes(start, 16, direction),
+                r.move_graphemes(start, 16, direction),
+                "start {start} {direction:?}"
+            );
+        }
+    }
+}
+
 #[test]
 fn chunks_cover_text_and_are_never_empty() {
     let s = "line one\n".repeat(2_000) + "é老😀";
@@ -220,11 +346,56 @@ fn chunks_cover_text_and_are_never_empty() {
 }
 
 #[test]
+fn chunk_at_returns_the_chunk_containing_each_byte() {
+    // Pins the vendored `Rope::chunk_at_byte` (DECISIONS 008), especially at
+    // leaf and gap edges, so a crop upgrade that changes its lookup fails
+    // here rather than only through grapheme results. Edits split leaves
+    // into gap buffers, whose two sides are separate chunks.
+    let mut s = "line one\né老😀\n".repeat(1_500);
+    let mut t = Text::from(s.as_str());
+    for i in 0..40 {
+        let at = (i * 4_099) % s.len();
+        let at = (0..=at).rev().find(|&o| s.is_char_boundary(o)).unwrap();
+        t.insert(at, "ab😀").unwrap();
+        s.insert_str(at, "ab😀");
+    }
+    assert_eq!(t, s.as_str());
+
+    // Expected tiling, from the public chunk iterator.
+    let mut expected = Vec::new();
+    let mut start = 0;
+    for c in t.chunks() {
+        expected.push((start, c));
+        start += c.len();
+    }
+    assert!(expected.len() > 1, "fixture should span several chunks");
+
+    let mut i = 0;
+    for b in 0..t.byte_len() {
+        if b == expected[i].0 + expected[i].1.len() {
+            i += 1;
+        }
+        let chunk = t.chunk_at(b).unwrap_or_else(|| panic!("no chunk at {b}"));
+        assert!(!chunk.text.is_empty(), "empty chunk at {b}");
+        assert!(chunk.start <= b && b < chunk.end(), "{b} not in chunk");
+        assert_eq!(chunk.text, &s[chunk.start..chunk.end()], "content at {b}");
+        assert_eq!(
+            (chunk.start, chunk.text),
+            expected[i],
+            "chunk at {b} differs from chunks()"
+        );
+    }
+    assert!(t.chunk_at(t.byte_len()).is_none());
+    assert!(t.chunk_at(usize::MAX).is_none());
+    assert!(Text::new().chunk_at(0).is_none());
+}
+
+#[test]
 fn snapshot_is_independent_of_later_edits() {
     let mut t = Text::from("hello world");
     let snap = t.snapshot();
     t.replace(0..5, "goodbye").unwrap();
-    t.insert(t.len(), "!").unwrap();
+    t.insert(t.byte_len(), "!").unwrap();
     assert_eq!(snap, "hello world");
     assert_eq!(t, "goodbye world!");
 }
