@@ -149,3 +149,60 @@ proptest! {
         prop_assert_eq!(c.invert(&original).map(|_| ()), valid);
     }
 }
+
+/// `(s, [a, b, c])` where `a` is valid for `s`, `b` for `a`'s output, and
+/// `c` for `b`'s output.
+pub(crate) fn chain() -> impl Strategy<Value = (String, Vec<ChangeSet>)> {
+    text_and_changeset()
+        .prop_flat_map(|(s, a)| {
+            let mid = apply_ops(a.ops(), &s);
+            (Just(s), Just(a), changeset_for(&mid))
+        })
+        .prop_flat_map(|(s, a, b)| {
+            let mid = apply_ops(b.ops(), &apply_ops(a.ops(), &s));
+            (Just(s), Just(a), Just(b), changeset_for(&mid))
+        })
+        .prop_map(|(s, a, b, c)| (s, vec![a, b, c]))
+}
+
+fn apply_str(c: &ChangeSet, s: &str) -> String {
+    apply_ops(c.ops(), s)
+}
+
+proptest! {
+    #[test]
+    fn compose_matches_sequential_apply((s, cs) in chain()) {
+        let (a, b) = (&cs[0], &cs[1]);
+        let ab = a.compose(b).unwrap();
+        assert_canonical(&ab)?;
+        prop_assert_eq!(ab.len_before(), a.len_before());
+        prop_assert_eq!(ab.len_after(), b.len_after());
+        prop_assert_eq!(apply_str(&ab, &s), apply_str(b, &apply_str(a, &s)));
+        let mut t = Text::from(s.as_str());
+        ab.apply(&mut t).unwrap();
+        prop_assert_eq!(t.to_string(), apply_str(b, &apply_str(a, &s)));
+    }
+
+    #[test]
+    fn compose_is_associative_on_text((s, cs) in chain()) {
+        let (a, b, c) = (&cs[0], &cs[1], &cs[2]);
+        let left = a.compose(b).unwrap().compose(c).unwrap();
+        let right = a.compose(&b.compose(c).unwrap()).unwrap();
+        prop_assert_eq!(apply_str(&left, &s), apply_str(&right, &s));
+    }
+
+    #[test]
+    fn compose_with_identity((_s, a) in text_and_changeset()) {
+        let id_before = ChangeSet::identity(a.len_before());
+        let id_after = ChangeSet::identity(a.len_after());
+        prop_assert_eq!(id_before.compose(&a), Ok(a.clone()));
+        prop_assert_eq!(a.compose(&id_after), Ok(a.clone()));
+    }
+
+    #[test]
+    fn compose_with_inverse_is_identity_on_text((s, a) in text_and_changeset()) {
+        let t = Text::from(s.as_str());
+        let undo = a.compose(&a.invert(&t).unwrap()).unwrap();
+        prop_assert_eq!(apply_str(&undo, &s), s.as_str());
+    }
+}

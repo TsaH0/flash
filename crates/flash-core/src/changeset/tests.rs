@@ -207,3 +207,45 @@ fn strategies_agree_on_multi_leaf_text() {
     assert_eq!(a, b);
     assert_eq!(a, super::reference::apply_ops(c.ops(), &s).as_str());
 }
+
+#[test]
+fn compose_basic() {
+    let a = ChangeSet::from_edits(3, [(1..1, "XY")]).unwrap(); // abc -> aXYbc
+    let b = ChangeSet::from_edits(5, [(2..4, "")]).unwrap(); // aXYbc -> aXc
+    let ab = a.compose(&b).unwrap();
+    assert_eq!((ab.len_before(), ab.len_after()), (3, 3));
+    let mut t = Text::from("abc");
+    ab.apply(&mut t).unwrap();
+    assert_eq!(t, "aXc");
+    assert_eq!(
+        ab.ops(),
+        &[Op::Retain(1), Op::Delete(1), ins("X"), Op::Retain(1)]
+    );
+}
+
+#[test]
+fn compose_rejects_length_mismatch() {
+    let a = ChangeSet::from_edits(3, [(1..1, "XY")]).unwrap();
+    assert_eq!(
+        a.compose(&ChangeSet::identity(4)),
+        Err(ChangeSetError::LengthMismatch {
+            expected: 5,
+            actual: 4
+        })
+    );
+}
+
+#[test]
+fn compose_rejects_split_inside_inserted_char() {
+    let a = ChangeSet::from_edits(0, [(0..0, "é")]).unwrap(); // 2 bytes
+    let delete_half = ChangeSet::from_edits(2, [(0..1, "")]).unwrap();
+    assert_eq!(
+        a.compose(&delete_half),
+        Err(ChangeSetError::NotCharBoundary { offset: 1 })
+    );
+    let retain_half = ChangeSet::from_edits(2, [(1..2, "")]).unwrap();
+    assert_eq!(
+        a.compose(&retain_half),
+        Err(ChangeSetError::NotCharBoundary { offset: 1 })
+    );
+}

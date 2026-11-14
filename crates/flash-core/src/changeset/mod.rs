@@ -29,6 +29,7 @@ use compact_str::CompactString;
 
 mod apply;
 mod builder;
+mod compose;
 
 #[cfg(test)]
 pub(crate) mod reference;
