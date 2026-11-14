@@ -12,6 +12,9 @@ pub mod text;
 #[cfg(test)]
 mod strategies;
 
+#[cfg(any(test, feature = "fuzzing"))]
+pub mod fuzzing;
+
 #[cfg(feature = "internals")]
 pub mod internals;
 

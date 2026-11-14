@@ -16,6 +16,8 @@ utf16 = ["crop/utf16-metric"]
 # Test-only: tiny rope leaves so small inputs build multi-leaf trees and
 # exercise chunk-boundary code paths.
 small-chunks = ["crop/small_chunks"]
+# Exposes `flash_core::fuzzing` for the cargo-fuzz crate in `fuzz/`.
+fuzzing = ["dep:arbitrary"]
 
 [dependencies]
 crop.workspace = true
@@ -24,8 +26,11 @@ crop.workspace = true
 unicode-segmentation.workspace = true
 # Inline (heap-free) storage for short inserted strings in ChangeSet ops.
 compact_str.workspace = true
+arbitrary = { workspace = true, optional = true }
 
 [dev-dependencies]
+# The fuzz entry point is also driven by a stable test (src/fuzzing.rs).
+arbitrary.workspace = true
 proptest.workspace = true
 criterion.workspace = true
 

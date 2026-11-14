@@ -1,0 +1,27 @@
+[package]
+name = "flash-core-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+flash-core = { path = "..", features = ["fuzzing"] }
+
+# A separate workspace, excluded from the root one.
+[workspace]
+members = ["."]
+
+# The root workspace's patch does not apply to a separate workspace.
+[patch.crates-io]
+crop = { path = "../../../vendor/crop" }
+
+[[bin]]
+name = "changeset"
+path = "fuzz_targets/changeset.rs"
+test = false
+doc = false
+bench = false
