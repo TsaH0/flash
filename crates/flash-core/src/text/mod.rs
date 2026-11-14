@@ -544,10 +544,6 @@ impl Text {
     // ----------------------------------------------------------------------
 
     /// Inserts `s` at `offset`. O(log n + |s|). On error the text is unchanged.
-    #[allow(
-        dead_code,
-        reason = "first non-test caller is Document::commit (Stage 4)"
-    )]
     pub(crate) fn insert(&mut self, offset: usize, s: &str) -> Result<(), TextError> {
         self.check_offset(offset)?;
         if !s.is_empty() {
@@ -557,10 +553,6 @@ impl Text {
     }
 
     /// Deletes `range`. O(log n). On error the text is unchanged.
-    #[allow(
-        dead_code,
-        reason = "first non-test caller is Document::commit (Stage 4)"
-    )]
     pub(crate) fn delete(&mut self, range: Range<usize>) -> Result<(), TextError> {
         self.check_range(&range)?;
         if !range.is_empty() {
@@ -571,10 +563,6 @@ impl Text {
 
     /// Replaces `range` with `s`. O(log n + |s|). On error the text is
     /// unchanged.
-    #[allow(
-        dead_code,
-        reason = "first non-test caller is Document::commit (Stage 4)"
-    )]
     pub(crate) fn replace(&mut self, range: Range<usize>, s: &str) -> Result<(), TextError> {
         self.check_range(&range)?;
         if !range.is_empty() || !s.is_empty() {

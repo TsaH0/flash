@@ -278,3 +278,39 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
   with `move_graphemes`.
 - **Reopen if:** crop fixes `Graphemes` upstream, or Stage 7 makes the word
   definition an option (PLAN 2.11).
+
+## 013 — Transaction collision rules and atomic apply
+
+- **Date:** 2026-11-14 (Stage 3)
+- **Decision:**
+  - Constructors (`insert`, `delete`, `replace`, `backspace`,
+    `delete_forward`) walk the ranges once, emitting edits through one
+    `ChangeSetBuilder` and computing each result range directly.
+  - *Same-position inserts* (two touching ranges sharing a head): each range
+    inserts its own copy, in selection order, and each head lands right after
+    its own copy.
+  - *Overlapping deletes* (backspace / delete forward, when a cursor sits
+    inside a cluster or a cursor's grapheme reaches into a neighbouring
+    range): overlapping deletions merge into their union, and their ranges
+    collapse to its start. Touching deletions stay separate edits.
+  - `Transaction::apply` validates first and then mutates, like
+    `ChangeSet::apply` (010): the change set against the text, then either
+    the transaction's selection against the *post-change* text, checked in
+    one pass over the ops without building that text, or the current
+    selection against the text before mapping it. Nothing is cloned.
+  - `Transaction::apply` is `pub` until `Document::commit` lands (Stage 4),
+    so the walking skeleton can drive it; then it becomes `pub(crate)`.
+- **Evidence:** `transaction/tests.rs` (collision, Unicode, error, and
+  atomicity cases); `transaction/proptests.rs` checks every intent against a
+  naive model that merges deletions pairwise and applies edits one at a time
+  back to front (PLAN Stage 3), selection validity after random
+  motion/edit sequences, and that a failed apply changes nothing. Mutating
+  the backward-anchor formula or the grapheme span each fail two properties.
+- **Alternatives:** one shared copy for same-position inserts (two cursors
+  typing at one spot would produce one character); rejecting overlapping
+  deletes (backspace would fail for a cursor inside a cluster); apply to a
+  clone and swap (rejected in 010: forces path copies).
+- **Trade-off:** the post-change selection check is a second small walk over
+  the ops; constructor-made selections are valid by construction, so it
+  only guards hand-built transactions.
+- **Reopen when:** Stage 5 history needs grouped or merged transactions.

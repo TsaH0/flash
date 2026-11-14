@@ -10,6 +10,7 @@ pub mod changeset;
 pub mod motion;
 pub mod selection;
 pub mod text;
+pub mod transaction;
 pub mod width;
 
 #[cfg(test)]
@@ -25,3 +26,4 @@ pub use changeset::{Assoc, ChangeSet, ChangeSetBuilder, ChangeSetError, Op};
 pub use motion::{Motion, Movement};
 pub use selection::{Range, Selection, SelectionError};
 pub use text::{Direction, Text, TextBuilder, TextError, TextSlice};
+pub use transaction::{Transaction, TransactionError};

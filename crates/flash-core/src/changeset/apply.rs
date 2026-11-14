@@ -38,10 +38,6 @@ impl ChangeSet {
     /// One rope edit per `(Delete, Insert)` group, back to front:
     /// O(groups · log n). Rebuilding the rope instead was slower at every
     /// measured edit count (DECISIONS 010).
-    #[allow(
-        dead_code,
-        reason = "first non-test caller is Document::commit (Stage 4)"
-    )]
     pub(crate) fn apply(&self, text: &mut Text) -> Result<(), ChangeSetError> {
         self.validate(text)?;
         self.edit_back_to_front(text)
@@ -49,10 +45,6 @@ impl ChangeSet {
 
     /// Walks the ops from the end so that each edit leaves the offsets of
     /// the ones still to apply unchanged. `self` must be valid for `text`.
-    #[allow(
-        dead_code,
-        reason = "first non-test caller is Document::commit (Stage 4)"
-    )]
     fn edit_back_to_front(&self, text: &mut Text) -> Result<(), ChangeSetError> {
         // Old-text offset where the op being visited ends.
         let mut end = self.len_before;
