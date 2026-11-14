@@ -137,3 +137,35 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
 - **Trade-off:** upgrading crop means re-applying the patch (or dropping it
   if upstream adds an equivalent) and re-running the reference-model tests.
 - **Reopen if:** crop publishes a chunk-at-offset accessor.
+
+## 009 — ChangeSet canonical form and position-mapping policy
+
+- **Date:** 2026-11-14 (Stage 2)
+- **Decision:** a `ChangeSet` is `Vec<Op>` (`Retain(usize)`, `Delete(usize)`,
+  `Insert(CompactString)`) built only through `ChangeSetBuilder`, which keeps
+  canonical form: no empty ops, no adjacent ops of one kind, and `Delete`
+  before `Insert` within an edit group. Positions map by the policy in the
+  `changeset` module docs: inside a `Retain` they shift; anywhere in the
+  closed range `[o, o + d]` of an edit group they collapse to the group's
+  left edge (`Assoc::Before`) or right edge after the inserted text
+  (`Assoc::After`); `len_before` maps to `len_after` unless an insert sits at
+  the end.
+- **Why:** canonical form makes structural equality meaningful
+  (`invert(invert(c)) == c` is checked structurally) and gives apply and
+  mapping one shape to handle. One uniform rule for inserts, deletes, and
+  replacements is easy to state and to test against a naive model.
+- **Consequence (PLAN Stage 2 "Known trap"):** composition does not preserve
+  positions. Example: on `"abc"`, `a` inserts `"Z"` at 1 and `b` deletes the
+  old `"b"`; mapping 2 with `Before` through `a` then `b` gives 2, through
+  `compose(a, b)` gives 1 (`compose_loses_positions_documented`). Position
+  tracking maps through each change set in order.
+- **Alternatives:** `Insert` before `Delete` (equivalent, arbitrary);
+  half-open group ranges, so a position right after a replaced range shifts
+  instead of collapsing (rejected: a pure deletion would then treat its two
+  edges differently).
+- **Trade-off:** a position just after a replaced range moves to the
+  replacement's edge chosen by `Assoc`, not past the replacement, when
+  `Before` is used. Stage 3's selection mapping picks `Assoc` per endpoint
+  with this in mind.
+- **Reopen if:** Stage 3 selection mapping or Stage 8 markers need a
+  different rule at replacement edges.

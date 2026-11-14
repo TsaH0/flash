@@ -22,6 +22,34 @@
 //! A change set is structurally valid by construction. Whether it is valid
 //! *for a given text* (right length, every op boundary on a char boundary) is
 //! checked separately against that text.
+//!
+//! # Position mapping
+//!
+//! [`ChangeSet::map_pos`] and [`ChangeSet::map_sorted`] take an offset in the
+//! old text to the new text. Canonical ops alternate `Retain` runs and *edit
+//! groups* `(Delete(d)?, Insert(s)?)`. For a group at old offset `o` and new
+//! offset `n`, and an old position `q`:
+//!
+//! - `q` strictly inside a `Retain` run `[o, o + k)` maps to `n + (q - o)`.
+//! - `q` in the closed range `[o, o + d]` of an edit group (for a pure
+//!   insert, only `q == o`) maps to `n` with [`Assoc::Before`] and to
+//!   `n + len(s)` with [`Assoc::After`]. So at a pure insertion `Before`
+//!   stays left of the inserted text and `After` moves right of it; inside a
+//!   pure deletion everything collapses to the deletion point; and a
+//!   replaced range collapses to the replacement's left or right edge.
+//! - `q == len_before` with no edit at the end maps to `len_after`.
+//! - `q > len_before` is an error.
+//!
+//! Mapping a char boundary of a text the change set is valid for gives a
+//! char boundary of the result, and sorted inputs give sorted outputs.
+//!
+//! # Composition and positions
+//!
+//! [`ChangeSet::compose`] preserves text, not positions: composing can merge
+//! separate edits into one replacement, and positions inside it then
+//! collapse. Anything that tracks positions (selections, markers, the
+//! revision log) maps through each change set in order, never through a
+//! composition. See `compose_loses_positions_documented` in the tests.
 
 use std::fmt;
 
@@ -30,6 +58,7 @@ use compact_str::CompactString;
 mod apply;
 mod builder;
 mod compose;
+mod map;
 
 #[cfg(test)]
 pub(crate) mod reference;

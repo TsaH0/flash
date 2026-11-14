@@ -1,7 +1,7 @@
 //! A naive `String` model of change sets, written independently of the
 //! canonical-form machinery so property tests can compare against it.
 
-use super::Op;
+use super::{Assoc, Op};
 
 /// Applies `ops` to `s` by walking them forward. Accepts any op sequence,
 /// canonical or not. Panics if the ops do not fit `s` (test-only code).
@@ -20,4 +20,41 @@ pub(crate) fn apply_ops(ops: &[Op], s: &str) -> String {
     }
     assert_eq!(pos, s.len(), "ops do not cover the text");
     out
+}
+
+/// Maps old position `pos` by the policy in the module docs, scanning from
+/// the start for every call. An edit group is a maximal run of non-`Retain`
+/// ops (in any order); it owns the closed old range it deletes.
+pub(crate) fn map_pos_naive(ops: &[Op], pos: usize, assoc: Assoc) -> usize {
+    let (mut old, mut new) = (0, 0);
+    let mut i = 0;
+    while i < ops.len() {
+        if let Op::Retain(k) = ops[i] {
+            if pos < old + k {
+                return new + (pos - old);
+            }
+            old += k;
+            new += k;
+            i += 1;
+            continue;
+        }
+        let (mut deleted, mut inserted) = (0, 0);
+        while let Some(op) = ops.get(i).filter(|op| !matches!(op, Op::Retain(_))) {
+            match op {
+                Op::Delete(d) => deleted += d,
+                Op::Insert(s) => inserted += s.len(),
+                Op::Retain(_) => unreachable!(),
+            }
+            i += 1;
+        }
+        if pos <= old + deleted {
+            return match assoc {
+                Assoc::Before => new,
+                Assoc::After => new + inserted,
+            };
+        }
+        old += deleted;
+        new += inserted;
+    }
+    new
 }
