@@ -40,6 +40,11 @@ harness = false
 required-features = ["internals"]
 
 [[bench]]
+name = "changeset"
+harness = false
+required-features = ["internals"]
+
+[[bench]]
 name = "latency"
 harness = false
 required-features = ["internals"]

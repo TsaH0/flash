@@ -1,0 +1,710 @@
+{
+  "baseline": "stage-2",
+  "commit": "fc0573f",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "cpu": "13th Gen Intel(R) Core(TM) i7-1355U",
+  "os": "Linux 6.18.63-2-lts",
+  "profile": "bench (release, debug symbols)",
+  "results": [
+    {
+      "id": "changeset/large/apply/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1406.278436919677,
+        "lower_ns": 1362.2747185753778,
+        "upper_ns": 1439.491832497773
+      },
+      "median": {
+        "point_ns": 1436.2466843126874,
+        "lower_ns": 1380.139260190577,
+        "upper_ns": 1447.6580995235574
+      }
+    },
+    {
+      "id": "changeset/large/apply/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 75746.45361984626,
+        "lower_ns": 75104.31620195668,
+        "upper_ns": 76342.35440251572
+      },
+      "median": {
+        "point_ns": 75908.77515723271,
+        "lower_ns": 74902.72816212439,
+        "upper_ns": 76478.81446540881
+      }
+    },
+    {
+      "id": "changeset/large/apply/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1063776.1070664313,
+        "lower_ns": 1057535.2177771898,
+        "upper_ns": 1071171.8011706348
+      },
+      "median": {
+        "point_ns": 1061036.7302469136,
+        "lower_ns": 1055196.9908877132,
+        "upper_ns": 1069919.0216049382
+      }
+    },
+    {
+      "id": "changeset/large/apply/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 9579172.482529763,
+        "lower_ns": 9561854.508988095,
+        "upper_ns": 9599070.79190476
+      },
+      "median": {
+        "point_ns": 9569252.546875,
+        "lower_ns": 9554305.361607142,
+        "upper_ns": 9610629.0
+      }
+    },
+    {
+      "id": "changeset/large/apply/3000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 3455953.030101411,
+        "lower_ns": 3446020.436080247,
+        "upper_ns": 3466047.9989093915
+      },
+      "median": {
+        "point_ns": 3457526.3015873013,
+        "lower_ns": 3445387.845679012,
+        "upper_ns": 3463665.312962963
+      }
+    },
+    {
+      "id": "changeset/large/build/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 38.73532787196678,
+        "lower_ns": 38.607963611244905,
+        "upper_ns": 38.97956202631048
+      },
+      "median": {
+        "point_ns": 38.616558420506614,
+        "lower_ns": 38.6054010211041,
+        "upper_ns": 38.632149649866
+      }
+    },
+    {
+      "id": "changeset/large/build/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1958.353500738593,
+        "lower_ns": 1953.9498942985765,
+        "upper_ns": 1961.692585735495
+      },
+      "median": {
+        "point_ns": 1959.22268594579,
+        "lower_ns": 1957.4358630558058,
+        "upper_ns": 1961.6839752276978
+      }
+    },
+    {
+      "id": "changeset/large/build/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 19541.770685619143,
+        "lower_ns": 19416.575810550297,
+        "upper_ns": 19628.228234565115
+      },
+      "median": {
+        "point_ns": 19592.639129863303,
+        "lower_ns": 19506.972923238696,
+        "upper_ns": 19655.824693305294
+      }
+    },
+    {
+      "id": "changeset/large/build/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 192334.3919777531,
+        "lower_ns": 191673.11199784622,
+        "upper_ns": 192699.73191463115
+      },
+      "median": {
+        "point_ns": 192656.45945595857,
+        "lower_ns": 192534.13698186527,
+        "upper_ns": 192717.4837157661
+      }
+    },
+    {
+      "id": "changeset/large/build/3000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 58455.84678012608,
+        "lower_ns": 57915.58690899858,
+        "upper_ns": 58999.57872457053
+      },
+      "median": {
+        "point_ns": 58516.1370846519,
+        "lower_ns": 57824.618275316454,
+        "upper_ns": 59125.957278481015
+      }
+    },
+    {
+      "id": "changeset/large/compose/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 63.77870852185221,
+        "lower_ns": 63.621770738410206,
+        "upper_ns": 63.93127074798158
+      },
+      "median": {
+        "point_ns": 63.78641842123032,
+        "lower_ns": 63.55562905473852,
+        "upper_ns": 64.00424362919284
+      }
+    },
+    {
+      "id": "changeset/large/compose/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 4425.6269717092855,
+        "lower_ns": 4420.543009461431,
+        "upper_ns": 4431.227135729523
+      },
+      "median": {
+        "point_ns": 4423.512843334145,
+        "lower_ns": 4418.753042843233,
+        "upper_ns": 4433.705344585092
+      }
+    },
+    {
+      "id": "changeset/large/compose/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 46535.2103240996,
+        "lower_ns": 46338.39517589018,
+        "upper_ns": 46740.24146187003
+      },
+      "median": {
+        "point_ns": 46523.379222079224,
+        "lower_ns": 46221.41731016731,
+        "upper_ns": 46849.543221793225
+      }
+    },
+    {
+      "id": "changeset/large/compose/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 476330.00613790966,
+        "lower_ns": 475813.17370400426,
+        "upper_ns": 476826.29841334274
+      },
+      "median": {
+        "point_ns": 476427.75324675324,
+        "lower_ns": 475704.53138528136,
+        "upper_ns": 477105.38079777366
+      }
+    },
+    {
+      "id": "changeset/large/compose/3000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 140572.59815337765,
+        "lower_ns": 140130.13445385752,
+        "upper_ns": 141036.01777962348
+      },
+      "median": {
+        "point_ns": 140427.58801679587,
+        "lower_ns": 139906.93023255814,
+        "upper_ns": 141209.66024363233
+      }
+    },
+    {
+      "id": "changeset/large/invert/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 254.41032836810479,
+        "lower_ns": 253.92995117732252,
+        "upper_ns": 255.18124406043515
+      },
+      "median": {
+        "point_ns": 254.02423684388646,
+        "lower_ns": 253.84326095632872,
+        "upper_ns": 254.40985010537963
+      }
+    },
+    {
+      "id": "changeset/large/invert/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 22676.719003824583,
+        "lower_ns": 22612.198089877736,
+        "upper_ns": 22772.523019836313
+      },
+      "median": {
+        "point_ns": 22639.688360779182,
+        "lower_ns": 22609.50881710362,
+        "upper_ns": 22679.259519350813
+      }
+    },
+    {
+      "id": "changeset/large/invert/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 552696.1444396344,
+        "lower_ns": 552292.6747643098,
+        "upper_ns": 553144.9004820226
+      },
+      "median": {
+        "point_ns": 552502.7703463204,
+        "lower_ns": 552104.7196969697,
+        "upper_ns": 553274.2174242424
+      }
+    },
+    {
+      "id": "changeset/large/invert/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 5836240.004977325,
+        "lower_ns": 5827313.737925172,
+        "upper_ns": 5846405.009761905
+      },
+      "median": {
+        "point_ns": 5834388.542857142,
+        "lower_ns": 5826529.748299319,
+        "upper_ns": 5843885.392857144
+      }
+    },
+    {
+      "id": "changeset/large/invert/3000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1839133.2366230157,
+        "lower_ns": 1836179.0585166668,
+        "upper_ns": 1842229.5923611112
+      },
+      "median": {
+        "point_ns": 1838820.9055555556,
+        "lower_ns": 1835739.85,
+        "upper_ns": 1841939.1
+      }
+    },
+    {
+      "id": "changeset/large/map_sorted/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1096.2452261664216,
+        "lower_ns": 1070.2540361674933,
+        "upper_ns": 1115.6439571087435
+      },
+      "median": {
+        "point_ns": 1102.9281869948568,
+        "lower_ns": 1086.2158569066864,
+        "upper_ns": 1122.0809262490816
+      }
+    },
+    {
+      "id": "changeset/large/map_sorted/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1501.446904688372,
+        "lower_ns": 1482.3645153394423,
+        "upper_ns": 1522.864176421278
+      },
+      "median": {
+        "point_ns": 1482.3461935645764,
+        "lower_ns": 1477.8444395728836,
+        "upper_ns": 1541.4772424575829
+      }
+    },
+    {
+      "id": "changeset/large/map_sorted/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 5164.786053938541,
+        "lower_ns": 5093.615729152853,
+        "upper_ns": 5221.859052745119
+      },
+      "median": {
+        "point_ns": 5202.254385092527,
+        "lower_ns": 5108.153794090347,
+        "upper_ns": 5227.656212183718
+      }
+    },
+    {
+      "id": "changeset/large/map_sorted/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 43711.794066111885,
+        "lower_ns": 43632.53889003265,
+        "upper_ns": 43799.37914664962
+      },
+      "median": {
+        "point_ns": 43682.44730987055,
+        "lower_ns": 43603.5239684466,
+        "upper_ns": 43812.51415857605
+      }
+    },
+    {
+      "id": "changeset/large/map_sorted/3000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 13211.375751555941,
+        "lower_ns": 13138.61095759607,
+        "upper_ns": 13282.788467090028
+      },
+      "median": {
+        "point_ns": 13233.127336626141,
+        "lower_ns": 13084.9375,
+        "upper_ns": 13317.68634751773
+      }
+    },
+    {
+      "id": "changeset/medium/apply/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 735.9357820737729,
+        "lower_ns": 698.5078694303296,
+        "upper_ns": 771.5145603156136
+      },
+      "median": {
+        "point_ns": 840.1226305919719,
+        "lower_ns": 829.3668882903255,
+        "upper_ns": 845.5434602649007
+      }
+    },
+    {
+      "id": "changeset/medium/apply/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 58855.57959359114,
+        "lower_ns": 55890.920354886315,
+        "upper_ns": 61633.952745999515
+      },
+      "median": {
+        "point_ns": 64951.16178321678,
+        "lower_ns": 63521.88275862069,
+        "upper_ns": 66163.08571428571
+      }
+    },
+    {
+      "id": "changeset/medium/apply/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 427402.1507944566,
+        "lower_ns": 414216.5671915878,
+        "upper_ns": 440024.60518424294
+      },
+      "median": {
+        "point_ns": 455822.0180769231,
+        "lower_ns": 443401.41866028705,
+        "upper_ns": 467793.12626262626
+      }
+    },
+    {
+      "id": "changeset/medium/apply/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1796596.2745454547,
+        "lower_ns": 1794843.272159092,
+        "upper_ns": 1798357.1673636362
+      },
+      "median": {
+        "point_ns": 1796558.3636363638,
+        "lower_ns": 1795008.9090909092,
+        "upper_ns": 1798603.227272727
+      }
+    },
+    {
+      "id": "changeset/medium/apply/3000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 765473.3179166667,
+        "lower_ns": 764685.8805000001,
+        "upper_ns": 766349.8297500001
+      },
+      "median": {
+        "point_ns": 764453.8125,
+        "lower_ns": 763839.2291666667,
+        "upper_ns": 765576.9166666666
+      }
+    },
+    {
+      "id": "changeset/medium/build/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 39.26053198834195,
+        "lower_ns": 39.17534414933509,
+        "upper_ns": 39.347269345986085
+      },
+      "median": {
+        "point_ns": 39.02825910723276,
+        "lower_ns": 38.977092937076534,
+        "upper_ns": 39.10974211785548
+      }
+    },
+    {
+      "id": "changeset/medium/build/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1970.1240527016425,
+        "lower_ns": 1964.823279698372,
+        "upper_ns": 1977.142380370901
+      },
+      "median": {
+        "point_ns": 1963.2650094935948,
+        "lower_ns": 1958.1191818684356,
+        "upper_ns": 1968.4609492221432
+      }
+    },
+    {
+      "id": "changeset/medium/build/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 19112.82367477748,
+        "lower_ns": 19038.854797928238,
+        "upper_ns": 19191.61498612029
+      },
+      "median": {
+        "point_ns": 19044.626863876863,
+        "lower_ns": 18983.539682539682,
+        "upper_ns": 19116.338160333642
+      }
+    },
+    {
+      "id": "changeset/medium/build/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 167863.28881017814,
+        "lower_ns": 167509.15565693114,
+        "upper_ns": 168232.3516284606
+      },
+      "median": {
+        "point_ns": 167327.6378205128,
+        "lower_ns": 166718.16754385963,
+        "upper_ns": 168020.83615710435
+      }
+    },
+    {
+      "id": "changeset/medium/build/3000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 58768.37584682584,
+        "lower_ns": 58493.743742397135,
+        "upper_ns": 59051.9299692469
+      },
+      "median": {
+        "point_ns": 58630.452480158725,
+        "lower_ns": 58091.35238095238,
+        "upper_ns": 58971.539951573846
+      }
+    },
+    {
+      "id": "changeset/medium/compose/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 64.08458872007678,
+        "lower_ns": 63.89668633585578,
+        "upper_ns": 64.27778029707986
+      },
+      "median": {
+        "point_ns": 64.05538068401964,
+        "lower_ns": 63.82512798934007,
+        "upper_ns": 64.2427371381453
+      }
+    },
+    {
+      "id": "changeset/medium/compose/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 4427.280083612311,
+        "lower_ns": 4420.947991534986,
+        "upper_ns": 4433.746866927809
+      },
+      "median": {
+        "point_ns": 4424.483564814815,
+        "lower_ns": 4421.351967592593,
+        "upper_ns": 4428.761599266528
+      }
+    },
+    {
+      "id": "changeset/medium/compose/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 45280.72918919228,
+        "lower_ns": 45184.610861528905,
+        "upper_ns": 45378.33760029091
+      },
+      "median": {
+        "point_ns": 45167.379883040936,
+        "lower_ns": 45019.3631840796,
+        "upper_ns": 45373.29629629629
+      }
+    },
+    {
+      "id": "changeset/medium/compose/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 436497.3309073584,
+        "lower_ns": 435986.31302628096,
+        "upper_ns": 437009.76422442397
+      },
+      "median": {
+        "point_ns": 436328.83443854994,
+        "lower_ns": 435681.61253233685,
+        "upper_ns": 436988.5
+      }
+    },
+    {
+      "id": "changeset/medium/compose/3000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 134737.72351333094,
+        "lower_ns": 134308.43594027762,
+        "upper_ns": 135266.91767677225
+      },
+      "median": {
+        "point_ns": 134210.22161172162,
+        "lower_ns": 134017.66666666666,
+        "upper_ns": 134543.40277777778
+      }
+    },
+    {
+      "id": "changeset/medium/invert/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 187.10283705005924,
+        "lower_ns": 185.96874584001802,
+        "upper_ns": 188.32205562381318
+      },
+      "median": {
+        "point_ns": 185.87924809649087,
+        "lower_ns": 183.24097516820234,
+        "upper_ns": 186.54544217245183
+      }
+    },
+    {
+      "id": "changeset/medium/invert/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 16046.837303085245,
+        "lower_ns": 15943.87470445545,
+        "upper_ns": 16155.108969431432
+      },
+      "median": {
+        "point_ns": 15965.115716180371,
+        "lower_ns": 15713.518369690011,
+        "upper_ns": 16040.01488833747
+      }
+    },
+    {
+      "id": "changeset/medium/invert/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 282953.4118638934,
+        "lower_ns": 281887.8955772661,
+        "upper_ns": 284062.37135415577
+      },
+      "median": {
+        "point_ns": 281424.00694444444,
+        "lower_ns": 280435.4411764706,
+        "upper_ns": 282662.04918032786
+      }
+    },
+    {
+      "id": "changeset/medium/invert/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 2063619.6089999997,
+        "lower_ns": 2054502.1179999998,
+        "upper_ns": 2073123.1141750005
+      },
+      "median": {
+        "point_ns": 2052127.25,
+        "lower_ns": 2040499.7,
+        "upper_ns": 2061285.8
+      }
+    },
+    {
+      "id": "changeset/medium/invert/3000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 764286.7521753669,
+        "lower_ns": 760952.9375988765,
+        "upper_ns": 767846.6059786081
+      },
+      "median": {
+        "point_ns": 759800.746031746,
+        "lower_ns": 753768.7916666666,
+        "upper_ns": 762395.9
+      }
+    },
+    {
+      "id": "changeset/medium/map_sorted/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 951.8963005144095,
+        "lower_ns": 943.7428360885785,
+        "upper_ns": 960.7206345769015
+      },
+      "median": {
+        "point_ns": 937.7613034207843,
+        "lower_ns": 929.7118357487923,
+        "upper_ns": 947.5250836120401
+      }
+    },
+    {
+      "id": "changeset/medium/map_sorted/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1293.834516126945,
+        "lower_ns": 1286.82925847172,
+        "upper_ns": 1301.5245884786473
+      },
+      "median": {
+        "point_ns": 1281.6289835164835,
+        "lower_ns": 1277.92922008547,
+        "upper_ns": 1288.5189776641269
+      }
+    },
+    {
+      "id": "changeset/medium/map_sorted/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 5197.094822660964,
+        "lower_ns": 5151.507032188836,
+        "upper_ns": 5243.207862508764
+      },
+      "median": {
+        "point_ns": 5216.388629564799,
+        "lower_ns": 5080.999158249158,
+        "upper_ns": 5275.985507246377
+      }
+    },
+    {
+      "id": "changeset/medium/map_sorted/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 40785.32331041193,
+        "lower_ns": 40675.0126495004,
+        "upper_ns": 40900.89799433375
+      },
+      "median": {
+        "point_ns": 40654.659477756286,
+        "lower_ns": 40549.29057971014,
+        "upper_ns": 40792.735
+      }
+    },
+    {
+      "id": "changeset/medium/map_sorted/3000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 12547.707507932591,
+        "lower_ns": 12508.136254986885,
+        "upper_ns": 12588.319178893173
+      },
+      "median": {
+        "point_ns": 12542.730364923747,
+        "lower_ns": 12513.23346681228,
+        "upper_ns": 12580.59670781893
+      }
+    }
+  ]
+}

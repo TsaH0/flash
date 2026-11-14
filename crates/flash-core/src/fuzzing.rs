@@ -52,8 +52,12 @@ fn run(u: &mut Unstructured<'_>) -> arbitrary::Result<()> {
     let boundaries: Vec<usize> = (0..=s.len()).filter(|&q| s.is_char_boundary(q)).collect();
     for assoc in [Assoc::Before, Assoc::After] {
         let mut mapped = boundaries.clone();
-        a.map_sorted(&mut mapped, assoc).expect("boundaries are in range");
-        assert!(mapped.windows(2).all(|w| w[0] <= w[1]), "mapping not monotonic");
+        a.map_sorted(&mut mapped, assoc)
+            .expect("boundaries are in range");
+        assert!(
+            mapped.windows(2).all(|w| w[0] <= w[1]),
+            "mapping not monotonic"
+        );
         assert!(
             mapped.iter().all(|&m| t2.is_char_boundary(m)),
             "mapped off a char boundary"
@@ -69,7 +73,8 @@ fn run(u: &mut Unstructured<'_>) -> arbitrary::Result<()> {
             let mut direct = t.clone();
             ab.apply(&mut direct).expect("composition applies");
             let mut sequential = t2;
-            b.apply(&mut sequential).expect("validated change set applies");
+            b.apply(&mut sequential)
+                .expect("validated change set applies");
             assert_eq!(direct, sequential, "composition differs from sequence");
         }
         // b is not valid for a's output; compose may still succeed (its

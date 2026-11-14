@@ -20,8 +20,8 @@ use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::time::Instant;
 
 use common::{Fixture, random_offsets, random_ranges};
-use flash_core::internals::{text_delete, text_insert, text_replace};
-use flash_core::{Direction, Text};
+use flash_core::internals::{changeset_apply, text_delete, text_insert, text_replace};
+use flash_core::{ChangeSet, Direction, Text};
 
 struct Counting;
 
@@ -181,6 +181,17 @@ fn run_fixture(fx: &Fixture) -> Vec<Report> {
             },
         ));
     }
+    // One edit as a change set: validate + apply, on a snapshot-shared tree.
+    let single_edits: Vec<ChangeSet> = ranges
+        .iter()
+        .map(|r| ChangeSet::from_edits(base.byte_len(), [(r.clone(), "x")]).unwrap())
+        .collect();
+    out.push(measure(
+        name,
+        "changeset 1 edit apply (after snapshot)",
+        |i| (base.snapshot(), &single_edits[i]),
+        |(t, c)| changeset_apply(c, t).unwrap(),
+    ));
     out.push(measure(
         name,
         "snapshot+drop",

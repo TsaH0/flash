@@ -5,7 +5,7 @@
 //! application leaves the text unchanged.
 
 use super::{ChangeSet, ChangeSetBuilder, ChangeSetError, Op};
-use crate::text::{Text, TextBuilder, TextError};
+use crate::text::{Text, TextError};
 
 impl ChangeSet {
     /// Checks that this change set can be applied to `text`: the lengths
@@ -34,53 +34,17 @@ impl ChangeSet {
     }
 
     /// Applies this change set to `text`. On error the text is unchanged.
+    ///
+    /// One rope edit per `(Delete, Insert)` group, back to front:
+    /// O(groups · log n). Rebuilding the rope instead was slower at every
+    /// measured edit count (DECISIONS 010).
     #[allow(
         dead_code,
         reason = "first non-test caller is Document::commit (Stage 4)"
     )]
     pub(crate) fn apply(&self, text: &mut Text) -> Result<(), ChangeSetError> {
         self.validate(text)?;
-        self.apply_per_op_unchecked(text)
-    }
-
-    /// Strategy A: one rope edit per (Delete, Insert) group, back to front.
-    /// O(groups · log n). Validates first; on error the text is unchanged.
-    #[allow(
-        dead_code,
-        reason = "first non-test caller is Document::commit (Stage 4)"
-    )]
-    pub(crate) fn apply_per_op(&self, text: &mut Text) -> Result<(), ChangeSetError> {
-        self.validate(text)?;
-        self.apply_per_op_unchecked(text)
-    }
-
-    /// Strategy B: builds a new rope from the retained pieces and inserts.
-    /// O(n + inserted). Validates first; on error the text is unchanged.
-    #[allow(
-        dead_code,
-        reason = "first non-test caller is Document::commit (Stage 4)"
-    )]
-    pub(crate) fn apply_rebuild(&self, text: &mut Text) -> Result<(), ChangeSetError> {
-        self.validate(text)?;
-        let mut builder = TextBuilder::new();
-        let mut pos = 0;
-        for op in &self.ops {
-            match op {
-                Op::Retain(n) => {
-                    let piece = text.slice(pos..pos + n).map_err(after_validation)?;
-                    for chunk in piece.chunks() {
-                        builder.append(chunk);
-                    }
-                    pos += n;
-                }
-                Op::Delete(n) => pos += n,
-                Op::Insert(s) => {
-                    builder.append(s);
-                }
-            }
-        }
-        *text = builder.build();
-        Ok(())
+        self.edit_back_to_front(text)
     }
 
     /// Walks the ops from the end so that each edit leaves the offsets of
@@ -89,7 +53,7 @@ impl ChangeSet {
         dead_code,
         reason = "first non-test caller is Document::commit (Stage 4)"
     )]
-    fn apply_per_op_unchecked(&self, text: &mut Text) -> Result<(), ChangeSetError> {
+    fn edit_back_to_front(&self, text: &mut Text) -> Result<(), ChangeSetError> {
         // Old-text offset where the op being visited ends.
         let mut end = self.len_before;
         let mut ops = self.ops.iter().rev().peekable();

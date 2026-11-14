@@ -169,3 +169,33 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
   with this in mind.
 - **Reopen if:** Stage 3 selection mapping or Stage 8 markers need a
   different rule at replacement edges.
+
+## 010 — ChangeSet application: per-op edits only
+
+- **Date:** 2026-11-14 (Stage 2)
+- **Decision:** `ChangeSet::apply` validates, then makes one rope edit per
+  `(Delete, Insert)` group, back to front. The `RopeBuilder` rebuild strategy
+  was implemented, measured, and removed.
+- **Evidence:** Criterion `--quick`, spread edits replacing ≤16 bytes with
+  `"x"`, applied to a snapshot-shared tree, same machine as Stage 1:
+
+  | edits | 1 MB per-op | 1 MB rebuild | 100 MB per-op | 100 MB rebuild |
+  |---|---|---|---|---|
+  | 1 | 1.0 µs | 323 µs | 1.7 µs | 36 ms |
+  | 100 | 77 µs | 201 µs | 80 µs | 22 ms |
+  | 1,000 | 526 µs | 734 µs | 1.04 ms | 23 ms |
+  | 3,000 | 845 µs | 1.14 ms | 3.8 ms | 23 ms |
+  | 10,000 | 1.95 ms | 2.73 ms | 11.5 ms | 27 ms |
+  | 30,000 | 3.9 ms | 5.6 ms | — | — |
+
+  Per-op is faster at every count measured. Rebuilding costs a full
+  traversal and re-chunking of the document (≥ 200 µs per MB), while
+  per-op cost grows sub-linearly with edit count because nearby edits share
+  copied tree paths.
+- **Alternatives:** a size- and count-based switch to rebuild (PLAN Stage 2);
+  apply to a clone and swap for atomicity (rejected: validation first gives
+  atomicity without forcing path copies).
+- **Trade-off:** none measured; one strategy less to test.
+- **Reopen if:** a workload applies change sets with more than ~1 edit per
+  30 bytes of document (e.g. whole-file reformatting) and per-op shows up in
+  latency measurements; re-measure rebuild then.

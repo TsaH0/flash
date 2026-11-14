@@ -5,6 +5,7 @@
 
 use std::ops::Range;
 
+use crate::changeset::{ChangeSet, ChangeSetError};
 use crate::text::{Text, TextError};
 
 pub fn text_insert(text: &mut Text, offset: usize, s: &str) -> Result<(), TextError> {
@@ -17,4 +18,9 @@ pub fn text_delete(text: &mut Text, range: Range<usize>) -> Result<(), TextError
 
 pub fn text_replace(text: &mut Text, range: Range<usize>, s: &str) -> Result<(), TextError> {
     text.replace(range, s)
+}
+
+/// Validates and applies `c` (`ChangeSet::apply`).
+pub fn changeset_apply(c: &ChangeSet, text: &mut Text) -> Result<(), ChangeSetError> {
+    c.apply(text)
 }

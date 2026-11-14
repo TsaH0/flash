@@ -168,10 +168,6 @@ fn apply_rejects_boundary_inside_char() {
     assert_eq!(c.apply(&mut t), want);
     assert_eq!(t, "😀");
     assert_eq!(c.invert(&t).map(|_| ()), want);
-    // Both strategies validate on their own as well.
-    assert_eq!(c.apply_per_op(&mut t), want);
-    assert_eq!(c.apply_rebuild(&mut t), want);
-    assert_eq!(t, "😀");
     // The same change set is fine for a text where byte 1 is a boundary.
     let mut ok = Text::from("abcd");
     c.apply(&mut ok).unwrap();
@@ -190,7 +186,7 @@ fn invert_basic() {
 }
 
 #[test]
-fn strategies_agree_on_multi_leaf_text() {
+fn apply_on_multi_leaf_text_matches_reference() {
     let s = "line\n".repeat(5_000);
     let edits: Vec<_> = (0..50)
         .map(|i| {
@@ -199,13 +195,10 @@ fn strategies_agree_on_multi_leaf_text() {
         })
         .collect();
     let c = ChangeSet::from_edits(s.len(), edits).unwrap();
-    let mut a = Text::from(s.as_str());
-    let mut b = a.clone();
-    assert!(a.chunks().count() > 1, "fixture should span several chunks");
-    c.apply_per_op(&mut a).unwrap();
-    c.apply_rebuild(&mut b).unwrap();
-    assert_eq!(a, b);
-    assert_eq!(a, super::reference::apply_ops(c.ops(), &s).as_str());
+    let mut t = Text::from(s.as_str());
+    assert!(t.chunks().count() > 1, "fixture should span several chunks");
+    c.apply(&mut t).unwrap();
+    assert_eq!(t, super::reference::apply_ops(c.ops(), &s).as_str());
 }
 
 #[test]

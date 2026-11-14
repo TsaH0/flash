@@ -78,14 +78,6 @@ proptest! {
     }
 }
 
-type ApplyFn = fn(&ChangeSet, &mut Text) -> Result<(), ChangeSetError>;
-
-const STRATEGIES: [(&str, ApplyFn); 3] = [
-    ("apply", ChangeSet::apply),
-    ("apply_per_op", ChangeSet::apply_per_op),
-    ("apply_rebuild", ChangeSet::apply_rebuild),
-];
-
 /// `u`, or (if `same_len`) `u` cut or padded with 'a' to exactly `len`
 /// bytes, so its char boundaries differ from the text a change set was made
 /// for while its length matches.
@@ -104,12 +96,9 @@ fn other_text(u: String, len: usize, same_len: bool) -> String {
 proptest! {
     #[test]
     fn apply_matches_reference((s, c) in text_and_changeset()) {
-        let want = apply_ops(c.ops(), &s);
-        for (name, strategy) in STRATEGIES {
-            let mut t = Text::from(s.as_str());
-            prop_assert_eq!(strategy(&c, &mut t), Ok(()), "{}", name);
-            prop_assert_eq!(t.to_string(), want.as_str(), "{}", name);
-        }
+        let mut t = Text::from(s.as_str());
+        prop_assert_eq!(c.apply(&mut t), Ok(()));
+        prop_assert_eq!(t.to_string(), apply_ops(c.ops(), &s));
     }
 
     #[test]
@@ -136,15 +125,12 @@ proptest! {
         let u = other_text(u, s.len(), same_len);
         let original = Text::from(u.as_str());
         let valid = c.validate(&original);
-        for (name, strategy) in STRATEGIES {
-            let mut t = original.clone();
-            let result = strategy(&c, &mut t);
-            prop_assert_eq!(result, valid, "{}", name);
-            if valid.is_ok() {
-                prop_assert_eq!(t.to_string(), apply_ops(c.ops(), &u), "{}", name);
-            } else {
-                prop_assert_eq!(&t, &original, "{} changed the text", name);
-            }
+        let mut t = original.clone();
+        prop_assert_eq!(c.apply(&mut t), valid);
+        if valid.is_ok() {
+            prop_assert_eq!(t.to_string(), apply_ops(c.ops(), &u));
+        } else {
+            prop_assert_eq!(&t, &original, "failed apply changed the text");
         }
         prop_assert_eq!(c.invert(&original).map(|_| ()), valid);
     }
