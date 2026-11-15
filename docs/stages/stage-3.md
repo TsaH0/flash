@@ -1,6 +1,6 @@
 # Stage 3 — Selections, transactions, multi-cursor, walking skeleton
 
-Status: **complete, awaiting owner approval.** Branch `stage-3`, local commits
+Status: **approved by the owner 2026-11-15** (without an independent review; see G). Branch `stage-3`, local commits
 only (nothing pushed). Plan:
 [2026-11-14-stage-3-selections-transactions.md](../superpowers/plans/2026-11-14-stage-3-selections-transactions.md).
 
@@ -291,8 +291,11 @@ the full redraw (it doubles from 80×24 to 200×60). The one-line tail is the
 walking the 1 MB line. The interactive number (real terminal, `read` →
 `flush`) needs a TTY. Owner smoke test, 2026-11-15, in a real terminal: typing,
 motions, selections, multi-cursor, and quit all worked, and the terminal was
-restored. The latency log (`FLASH_LATENCY_LOG`) was not produced on that
-run, so there is no interactive number yet.
+restored. A later owner session with `FLASH_LATENCY_LOG` set gave the
+interactive number (`bench/results/stage-3-interactive.jsonl`, real
+terminal, `read` returning → `flush` returning, 199 events): **p50 339 µs,
+p95 548 µs, p99 758 µs, max 819 µs** — under the PLAN section 4 target of
+2 ms p99 for dequeue to flush.
 
 ## G. Review
 

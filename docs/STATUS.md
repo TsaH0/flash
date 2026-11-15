@@ -1,6 +1,6 @@
 # Flash status
 
-Updated: 2026-11-15, end of Stage 3 (awaiting owner approval).
+Updated: 2026-11-15, Stage 3 approved; Stage 4 in progress.
 
 ## Completed and tested
 
@@ -34,26 +34,23 @@ Updated: 2026-11-15, end of Stage 3 (awaiting owner approval).
   latency bench.
 - **Benchmarks** (`benches/text.rs`, `benches/latency.rs`): Criterion suite
   plus per-operation p50/p95/p99/max and allocation counts on deterministic
-  fixtures. Results in `bench/results/`.
+  fixtures. Results in `bench/results/`. Interactive skeleton latency (real
+  terminal, read → flush): p99 758 µs over 199 events.
 
 ## Implemented but not fully verified
 
-- The skeleton's real-terminal latency: the owner's smoke test passed
-  (2026-11-15), but no interactive latency log was captured; see
-  [stage-3.md](stages/stage-3.md) section F.
-- Stage 3 had no independent fresh-context review (dispatch was refused by
-  the session's permission policy); the implementer's adversarial pass is in
-  stage-3.md section G.
+- Stage 3 had no independent fresh-context review; the owner approved it
+  without one (2026-11-15). The implementer's adversarial pass is in
+  [stage-3.md](stages/stage-3.md) section G.
 
 ## In progress
 
-- Nothing. Stage 3 is waiting for review and approval
-  ([stage-3.md](stages/stage-3.md)).
+- Stage 4: documents, views, revisions, headless editor, trace replay
+  (branch `stage-4`; plan
+  [2026-11-15-stage-4-documents-editor.md](superpowers/plans/2026-11-15-stage-4-documents-editor.md)).
 
 ## Planned
 
-- Stage 4: documents, views, revisions, headless editor, trace replay
-  (next, after approval). `Transaction::apply` becomes `pub(crate)` there.
 - Stages 5–11 as in [PLAN.md](PLAN.md).
 
 ## Deferred
