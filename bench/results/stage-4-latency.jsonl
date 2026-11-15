@@ -1,0 +1,105 @@
+{"fixture":"small","op":"insert+delete char (owned)","p50_ns":144,"p95_ns":168,"p99_ns":181,"max_ns":11020,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"insert char (after snapshot)","p50_ns":290,"p95_ns":456,"p99_ns":504,"max_ns":21091,"allocs_per_op":5.992,"bytes_per_op":3339.6}
+{"fixture":"small","op":"delete <=16B (after snapshot)","p50_ns":211,"p95_ns":315,"p99_ns":341,"max_ns":31083,"allocs_per_op":4.009,"bytes_per_op":2327.1}
+{"fixture":"small","op":"replace <=16B (after snapshot)","p50_ns":236,"p95_ns":477,"p99_ns":517,"max_ns":12579,"allocs_per_op":5.268,"bytes_per_op":2969.8}
+{"fixture":"small","op":"line_of_offset","p50_ns":69,"p95_ns":84,"p99_ns":90,"max_ns":9358,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"line_range","p50_ns":89,"p95_ns":111,"p99_ns":115,"max_ns":7173,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"is_grapheme_boundary","p50_ns":41,"p95_ns":55,"p99_ns":61,"max_ns":6234,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"move_graphemes 1 fwd","p50_ns":72,"p95_ns":86,"p99_ns":92,"max_ns":8022,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"move_graphemes 16 fwd","p50_ns":354,"p95_ns":382,"p99_ns":421,"max_ns":23388,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"move_graphemes 16 back","p50_ns":223,"p95_ns":247,"p99_ns":282,"max_ns":10721,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"changeset 1 edit apply (after snapshot)","p50_ns":226,"p95_ns":353,"p99_ns":496,"max_ns":8942,"allocs_per_op":4.341,"bytes_per_op":2504.1}
+{"fixture":"small","op":"txn insert char (1 cursor)","p50_ns":446,"p95_ns":600,"p99_ns":635,"max_ns":20749,"allocs_per_op":6.992,"bytes_per_op":3411.6}
+{"fixture":"small","op":"txn backspace (1 cursor)","p50_ns":379,"p95_ns":479,"p99_ns":519,"max_ns":8076,"allocs_per_op":5.249,"bytes_per_op":2535.8}
+{"fixture":"small","op":"doc commit insert char (1 view)","p50_ns":555,"p95_ns":692,"p99_ns":755,"max_ns":26649,"allocs_per_op":7.992,"bytes_per_op":3603.6}
+{"fixture":"small","op":"doc commit insert char (2 views)","p50_ns":616,"p95_ns":768,"p99_ns":807,"max_ns":31492,"allocs_per_op":7.992,"bytes_per_op":3603.6}
+{"fixture":"small","op":"editor handle key 'x'","p50_ns":535,"p95_ns":688,"p99_ns":723,"max_ns":11222,"allocs_per_op":7.992,"bytes_per_op":3603.6}
+{"fixture":"small","op":"editor handle Right","p50_ns":193,"p95_ns":226,"p99_ns":242,"max_ns":4401,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"motion right","p50_ns":87,"p95_ns":99,"p99_ns":108,"max_ns":3781,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"motion down","p50_ns":1082,"p95_ns":2064,"p99_ns":2521,"max_ns":10420,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"motion word forward","p50_ns":228,"p95_ns":443,"p99_ns":563,"max_ns":3695,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"snapshot+drop","p50_ns":26,"p95_ns":27,"p99_ns":28,"max_ns":5411,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"insert+delete char (owned)","p50_ns":384,"p95_ns":456,"p99_ns":501,"max_ns":6417,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"insert char (after snapshot)","p50_ns":950,"p95_ns":1129,"p99_ns":1292,"max_ns":23787,"allocs_per_op":18.423,"bytes_per_op":5229.9}
+{"fixture":"medium","op":"delete <=16B (after snapshot)","p50_ns":528,"p95_ns":688,"p99_ns":887,"max_ns":26424,"allocs_per_op":7.548,"bytes_per_op":2413.7}
+{"fixture":"medium","op":"replace <=16B (after snapshot)","p50_ns":914,"p95_ns":1266,"p99_ns":1564,"max_ns":29289,"allocs_per_op":14.163,"bytes_per_op":4143.4}
+{"fixture":"medium","op":"line_of_offset","p50_ns":132,"p95_ns":187,"p99_ns":278,"max_ns":5498,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"line_range","p50_ns":327,"p95_ns":477,"p99_ns":547,"max_ns":9834,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"is_grapheme_boundary","p50_ns":109,"p95_ns":189,"p99_ns":245,"max_ns":14246,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"move_graphemes 1 fwd","p50_ns":133,"p95_ns":243,"p99_ns":288,"max_ns":6816,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"move_graphemes 16 fwd","p50_ns":417,"p95_ns":513,"p99_ns":632,"max_ns":41945,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"move_graphemes 16 back","p50_ns":293,"p95_ns":340,"p99_ns":480,"max_ns":6889,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"changeset 1 edit apply (after snapshot)","p50_ns":670,"p95_ns":1015,"p99_ns":1272,"max_ns":39297,"allocs_per_op":8.617,"bytes_per_op":2716.8}
+{"fixture":"medium","op":"txn insert char (1 cursor)","p50_ns":1412,"p95_ns":1624,"p99_ns":1773,"max_ns":13457,"allocs_per_op":19.423,"bytes_per_op":5301.9}
+{"fixture":"medium","op":"txn backspace (1 cursor)","p50_ns":1185,"p95_ns":1537,"p99_ns":2128,"max_ns":94187,"allocs_per_op":9.002,"bytes_per_op":2626.6}
+{"fixture":"medium","op":"doc commit insert char (1 view)","p50_ns":1551,"p95_ns":1812,"p99_ns":2207,"max_ns":28992,"allocs_per_op":20.423,"bytes_per_op":5493.9}
+{"fixture":"medium","op":"doc commit insert char (2 views)","p50_ns":1674,"p95_ns":1957,"p99_ns":2599,"max_ns":15451,"allocs_per_op":20.423,"bytes_per_op":5493.9}
+{"fixture":"medium","op":"editor handle key 'x'","p50_ns":1543,"p95_ns":1733,"p99_ns":1881,"max_ns":25044,"allocs_per_op":20.423,"bytes_per_op":5493.9}
+{"fixture":"medium","op":"editor handle Right","p50_ns":482,"p95_ns":607,"p99_ns":675,"max_ns":10284,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"motion right","p50_ns":236,"p95_ns":295,"p99_ns":327,"max_ns":4200,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"motion down","p50_ns":1912,"p95_ns":2939,"p99_ns":3408,"max_ns":17088,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"motion word forward","p50_ns":432,"p95_ns":697,"p99_ns":846,"max_ns":64646,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"snapshot+drop","p50_ns":26,"p95_ns":27,"p99_ns":28,"max_ns":204,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"insert+delete char (owned)","p50_ns":1203,"p95_ns":2530,"p99_ns":3150,"max_ns":40404,"allocs_per_op":1.294,"bytes_per_op":930.7}
+{"fixture":"large","op":"insert char (after snapshot)","p50_ns":1841,"p95_ns":2142,"p99_ns":2341,"max_ns":61574,"allocs_per_op":26.927,"bytes_per_op":6002.0}
+{"fixture":"large","op":"delete <=16B (after snapshot)","p50_ns":1152,"p95_ns":1405,"p99_ns":1543,"max_ns":12469,"allocs_per_op":9.430,"bytes_per_op":2696.0}
+{"fixture":"large","op":"replace <=16B (after snapshot)","p50_ns":1906,"p95_ns":2407,"p99_ns":2693,"max_ns":55060,"allocs_per_op":20.006,"bytes_per_op":4721.5}
+{"fixture":"large","op":"line_of_offset","p50_ns":589,"p95_ns":844,"p99_ns":986,"max_ns":14738,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"line_range","p50_ns":915,"p95_ns":1185,"p99_ns":1347,"max_ns":19264,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"is_grapheme_boundary","p50_ns":500,"p95_ns":717,"p99_ns":860,"max_ns":39786,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"move_graphemes 1 fwd","p50_ns":486,"p95_ns":708,"p99_ns":844,"max_ns":24503,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"move_graphemes 16 fwd","p50_ns":738,"p95_ns":955,"p99_ns":1108,"max_ns":13028,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"move_graphemes 16 back","p50_ns":601,"p95_ns":794,"p99_ns":923,"max_ns":21869,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"changeset 1 edit apply (after snapshot)","p50_ns":1369,"p95_ns":1922,"p99_ns":2256,"max_ns":31324,"allocs_per_op":10.993,"bytes_per_op":3044.4}
+{"fixture":"large","op":"txn insert char (1 cursor)","p50_ns":2485,"p95_ns":2845,"p99_ns":3082,"max_ns":14819,"allocs_per_op":27.927,"bytes_per_op":6074.0}
+{"fixture":"large","op":"txn backspace (1 cursor)","p50_ns":2042,"p95_ns":2435,"p99_ns":2684,"max_ns":19742,"allocs_per_op":11.001,"bytes_per_op":2926.6}
+{"fixture":"large","op":"doc commit insert char (1 view)","p50_ns":2402,"p95_ns":3200,"p99_ns":3707,"max_ns":20995,"allocs_per_op":28.927,"bytes_per_op":6266.0}
+{"fixture":"large","op":"doc commit insert char (2 views)","p50_ns":2497,"p95_ns":2818,"p99_ns":3088,"max_ns":42569,"allocs_per_op":28.927,"bytes_per_op":6266.0}
+{"fixture":"large","op":"editor handle key 'x'","p50_ns":2356,"p95_ns":2611,"p99_ns":2785,"max_ns":48721,"allocs_per_op":28.927,"bytes_per_op":6266.0}
+{"fixture":"large","op":"editor handle Right","p50_ns":662,"p95_ns":795,"p99_ns":885,"max_ns":8504,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"motion right","p50_ns":558,"p95_ns":763,"p99_ns":894,"max_ns":22219,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"motion down","p50_ns":2731,"p95_ns":3799,"p99_ns":4250,"max_ns":34960,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"motion word forward","p50_ns":818,"p95_ns":1130,"p99_ns":1298,"max_ns":33957,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"snapshot+drop","p50_ns":27,"p95_ns":28,"p99_ns":28,"max_ns":1589,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"insert+delete char (owned)","p50_ns":383,"p95_ns":455,"p99_ns":499,"max_ns":6305,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"insert char (after snapshot)","p50_ns":927,"p95_ns":1092,"p99_ns":1170,"max_ns":18101,"allocs_per_op":18.412,"bytes_per_op":5229.5}
+{"fixture":"one-line","op":"delete <=16B (after snapshot)","p50_ns":518,"p95_ns":580,"p99_ns":656,"max_ns":6367,"allocs_per_op":7.547,"bytes_per_op":2414.0}
+{"fixture":"one-line","op":"replace <=16B (after snapshot)","p50_ns":894,"p95_ns":1164,"p99_ns":1261,"max_ns":14152,"allocs_per_op":14.179,"bytes_per_op":4145.0}
+{"fixture":"one-line","op":"line_of_offset","p50_ns":128,"p95_ns":158,"p99_ns":182,"max_ns":3667,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"line_range","p50_ns":84,"p95_ns":85,"p99_ns":93,"max_ns":3510,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"is_grapheme_boundary","p50_ns":105,"p95_ns":137,"p99_ns":155,"max_ns":2614,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"move_graphemes 1 fwd","p50_ns":128,"p95_ns":158,"p99_ns":176,"max_ns":3396,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"move_graphemes 16 fwd","p50_ns":409,"p95_ns":450,"p99_ns":595,"max_ns":4826,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"move_graphemes 16 back","p50_ns":280,"p95_ns":323,"p99_ns":461,"max_ns":7982,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"changeset 1 edit apply (after snapshot)","p50_ns":676,"p95_ns":1037,"p99_ns":1312,"max_ns":39921,"allocs_per_op":8.618,"bytes_per_op":2717.4}
+{"fixture":"one-line","op":"txn insert char (1 cursor)","p50_ns":1481,"p95_ns":1737,"p99_ns":1898,"max_ns":19073,"allocs_per_op":19.412,"bytes_per_op":5301.5}
+{"fixture":"one-line","op":"txn backspace (1 cursor)","p50_ns":1194,"p95_ns":1413,"p99_ns":1567,"max_ns":36014,"allocs_per_op":9.002,"bytes_per_op":2626.7}
+{"fixture":"one-line","op":"doc commit insert char (1 view)","p50_ns":1637,"p95_ns":1839,"p99_ns":1957,"max_ns":29318,"allocs_per_op":20.412,"bytes_per_op":5493.5}
+{"fixture":"one-line","op":"doc commit insert char (2 views)","p50_ns":1759,"p95_ns":2004,"p99_ns":2186,"max_ns":17573,"allocs_per_op":20.412,"bytes_per_op":5493.5}
+{"fixture":"one-line","op":"editor handle key 'x'","p50_ns":1641,"p95_ns":1843,"p99_ns":1957,"max_ns":13292,"allocs_per_op":20.412,"bytes_per_op":5493.5}
+{"fixture":"one-line","op":"editor handle Right","p50_ns":471,"p95_ns":591,"p99_ns":650,"max_ns":4526,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"motion right","p50_ns":233,"p95_ns":291,"p99_ns":324,"max_ns":4113,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"motion down","p50_ns":26461664,"p95_ns":50187718,"p99_ns":54948282,"max_ns":374377451,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"motion word forward","p50_ns":420,"p95_ns":663,"p99_ns":792,"max_ns":5003,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"snapshot+drop","p50_ns":26,"p95_ns":27,"p99_ns":28,"max_ns":1803,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"insert+delete char (owned)","p50_ns":365,"p95_ns":435,"p99_ns":475,"max_ns":19130,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"insert char (after snapshot)","p50_ns":525,"p95_ns":1096,"p99_ns":1159,"max_ns":7064,"allocs_per_op":12.540,"bytes_per_op":3700.4}
+{"fixture":"unicode","op":"delete <=16B (after snapshot)","p50_ns":523,"p95_ns":582,"p99_ns":611,"max_ns":4946,"allocs_per_op":6.666,"bytes_per_op":2132.7}
+{"fixture":"unicode","op":"replace <=16B (after snapshot)","p50_ns":932,"p95_ns":1194,"p99_ns":1266,"max_ns":14632,"allocs_per_op":14.171,"bytes_per_op":4143.8}
+{"fixture":"unicode","op":"line_of_offset","p50_ns":133,"p95_ns":163,"p99_ns":177,"max_ns":2398,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"line_range","p50_ns":340,"p95_ns":393,"p99_ns":416,"max_ns":3028,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"is_grapheme_boundary","p50_ns":139,"p95_ns":177,"p99_ns":228,"max_ns":7259,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"move_graphemes 1 fwd","p50_ns":166,"p95_ns":266,"p99_ns":303,"max_ns":2570,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"move_graphemes 16 fwd","p50_ns":701,"p95_ns":989,"p99_ns":1205,"max_ns":10569,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"move_graphemes 16 back","p50_ns":563,"p95_ns":765,"p99_ns":944,"max_ns":3578,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"changeset 1 edit apply (after snapshot)","p50_ns":673,"p95_ns":1116,"p99_ns":1317,"max_ns":5541,"allocs_per_op":8.782,"bytes_per_op":2756.2}
+{"fixture":"unicode","op":"txn insert char (1 cursor)","p50_ns":1038,"p95_ns":1656,"p99_ns":1755,"max_ns":10500,"allocs_per_op":13.540,"bytes_per_op":3772.4}
+{"fixture":"unicode","op":"txn backspace (1 cursor)","p50_ns":1245,"p95_ns":1441,"p99_ns":1565,"max_ns":15768,"allocs_per_op":9.005,"bytes_per_op":2629.2}
+{"fixture":"unicode","op":"doc commit insert char (1 view)","p50_ns":1175,"p95_ns":1845,"p99_ns":1941,"max_ns":13444,"allocs_per_op":14.540,"bytes_per_op":3964.4}
+{"fixture":"unicode","op":"doc commit insert char (2 views)","p50_ns":1302,"p95_ns":2024,"p99_ns":2145,"max_ns":18072,"allocs_per_op":14.540,"bytes_per_op":3964.4}
+{"fixture":"unicode","op":"editor handle key 'x'","p50_ns":1187,"p95_ns":1881,"p99_ns":1982,"max_ns":15371,"allocs_per_op":14.540,"bytes_per_op":3964.4}
+{"fixture":"unicode","op":"editor handle Right","p50_ns":536,"p95_ns":680,"p99_ns":768,"max_ns":7197,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"motion right","p50_ns":272,"p95_ns":377,"p99_ns":433,"max_ns":66743,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"motion down","p50_ns":2054,"p95_ns":3188,"p99_ns":3716,"max_ns":16467,"allocs_per_op":0.029,"bytes_per_op":0.4}
+{"fixture":"unicode","op":"motion word forward","p50_ns":605,"p95_ns":1105,"p99_ns":1485,"max_ns":3689,"allocs_per_op":0.009,"bytes_per_op":0.1}
+{"fixture":"unicode","op":"snapshot+drop","p50_ns":26,"p95_ns":27,"p99_ns":28,"max_ns":2243,"allocs_per_op":0.000,"bytes_per_op":0.0}

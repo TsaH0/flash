@@ -59,6 +59,10 @@ harness = false
 required-features = ["internals"]
 
 [[bench]]
+name = "document"
+harness = false
+
+[[bench]]
 name = "latency"
 harness = false
 required-features = ["internals"]

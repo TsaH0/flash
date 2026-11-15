@@ -1,0 +1,1046 @@
+{
+  "baseline": "stage-4",
+  "commit": "f0cbea6",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "cpu": "13th Gen Intel(R) Core(TM) i7-1355U",
+  "os": "Linux 6.18.63-3-lts",
+  "profile": "bench (release, debug symbols)",
+  "results": [
+    {
+      "id": "commit/large/origin 10k/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 19547962.74906746,
+        "lower_ns": 19347086.365555555,
+        "upper_ns": 19808513.02309524
+      },
+      "median": {
+        "point_ns": 19439631.34166667,
+        "lower_ns": 19314512.6,
+        "upper_ns": 19724343.09375
+      }
+    },
+    {
+      "id": "commit/large/origin 10k/2",
+      "throughput": null,
+      "mean": {
+        "point_ns": 19697594.443492062,
+        "lower_ns": 19542944.982658733,
+        "upper_ns": 19860739.215873014
+      },
+      "median": {
+        "point_ns": 19617406.534722224,
+        "lower_ns": 19461782.25,
+        "upper_ns": 19966680.35
+      }
+    },
+    {
+      "id": "commit/large/origin 10k/8",
+      "throughput": null,
+      "mean": {
+        "point_ns": 21275473.02095238,
+        "lower_ns": 20997890.607440475,
+        "upper_ns": 21570705.560148813
+      },
+      "median": {
+        "point_ns": 21214286.791666664,
+        "lower_ns": 20831793.541666664,
+        "upper_ns": 21636362.9
+      }
+    },
+    {
+      "id": "commit/large/origin one/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1667.1675063797934,
+        "lower_ns": 1653.0127628431023,
+        "upper_ns": 1684.3295607842792
+      },
+      "median": {
+        "point_ns": 1654.38207177519,
+        "lower_ns": 1648.5562158614061,
+        "upper_ns": 1682.1472677403474
+      }
+    },
+    {
+      "id": "commit/large/origin one/2",
+      "throughput": null,
+      "mean": {
+        "point_ns": 144691.67279109062,
+        "lower_ns": 113813.79520023042,
+        "upper_ns": 176286.98965284176
+      },
+      "median": {
+        "point_ns": 106617.55483870968,
+        "lower_ns": 101815.88,
+        "upper_ns": 204673.72715053766
+      }
+    },
+    {
+      "id": "commit/large/origin one/8",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1167131.4119085413,
+        "lower_ns": 1164047.9827551022,
+        "upper_ns": 1171037.64464418
+      },
+      "median": {
+        "point_ns": 1165239.7230158732,
+        "lower_ns": 1163168.4523809524,
+        "upper_ns": 1170056.6296296297
+      }
+    },
+    {
+      "id": "commit/medium/origin 10k/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 2698882.80625,
+        "lower_ns": 2693526.3625,
+        "upper_ns": 2704506.03084375
+      },
+      "median": {
+        "point_ns": 2692912.1875,
+        "lower_ns": 2686433.375,
+        "upper_ns": 2700115.375
+      }
+    },
+    {
+      "id": "commit/medium/origin 10k/2",
+      "throughput": null,
+      "mean": {
+        "point_ns": 4855628.1675,
+        "lower_ns": 4650588.247562501,
+        "upper_ns": 5051604.2925625
+      },
+      "median": {
+        "point_ns": 5278850.125,
+        "lower_ns": 5251029.5,
+        "upper_ns": 5372279.25
+      }
+    },
+    {
+      "id": "commit/medium/origin 10k/8",
+      "throughput": null,
+      "mean": {
+        "point_ns": 6537228.295,
+        "lower_ns": 5988843.3385,
+        "upper_ns": 7117604.0470624985
+      },
+      "median": {
+        "point_ns": 4620651.25,
+        "lower_ns": 4515947.25,
+        "upper_ns": 5065079.0
+      }
+    },
+    {
+      "id": "commit/medium/origin one/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 984.5687570309237,
+        "lower_ns": 974.2123497118149,
+        "upper_ns": 994.239677761673
+      },
+      "median": {
+        "point_ns": 1006.6692541613315,
+        "lower_ns": 1001.879827351204,
+        "upper_ns": 1012.7034080583206
+      }
+    },
+    {
+      "id": "commit/medium/origin one/2",
+      "throughput": null,
+      "mean": {
+        "point_ns": 109808.23863940901,
+        "lower_ns": 107575.88120243604,
+        "upper_ns": 112527.62135615687
+      },
+      "median": {
+        "point_ns": 103913.23792613635,
+        "lower_ns": 102743.42857142858,
+        "upper_ns": 113815.09089619966
+      }
+    },
+    {
+      "id": "commit/medium/origin one/8",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1208872.685454546,
+        "lower_ns": 1199174.7557045454,
+        "upper_ns": 1218615.9088863637
+      },
+      "median": {
+        "point_ns": 1218432.3181818184,
+        "lower_ns": 1172062.7727272727,
+        "upper_ns": 1230002.0454545454
+      }
+    },
+    {
+      "id": "line_ending_detect/large/detect",
+      "throughput": null,
+      "mean": {
+        "point_ns": 84848371.86666666,
+        "lower_ns": 84667035.73333333,
+        "upper_ns": 85033794.135
+      },
+      "median": {
+        "point_ns": 84824816.16666667,
+        "lower_ns": 84601066.33333334,
+        "upper_ns": 85088564.33333334
+      }
+    },
+    {
+      "id": "line_ending_detect/medium/detect",
+      "throughput": null,
+      "mean": {
+        "point_ns": 870196.5199999999,
+        "lower_ns": 843898.47325,
+        "upper_ns": 900347.3973833331
+      },
+      "median": {
+        "point_ns": 822091.1666666667,
+        "lower_ns": 821149.8666666667,
+        "upper_ns": 823088.7333333334
+      }
+    },
+    {
+      "id": "transaction/large/clustered/backspace/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1022.698868631462,
+        "lower_ns": 1009.6951895908348,
+        "upper_ns": 1033.7175414944493
+      },
+      "median": {
+        "point_ns": 1032.1310089249437,
+        "lower_ns": 1009.5809838804589,
+        "upper_ns": 1034.249247848159
+      }
+    },
+    {
+      "id": "transaction/large/clustered/backspace/10",
+      "throughput": null,
+      "mean": {
+        "point_ns": 3908.156178151456,
+        "lower_ns": 3708.238341540156,
+        "upper_ns": 4082.1605062788826
+      },
+      "median": {
+        "point_ns": 4041.7644134151114,
+        "lower_ns": 3641.2522837009,
+        "upper_ns": 4103.596756419737
+      }
+    },
+    {
+      "id": "transaction/large/clustered/backspace/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 24554.451628161147,
+        "lower_ns": 24415.31051200565,
+        "upper_ns": 24720.46956954533
+      },
+      "median": {
+        "point_ns": 24413.707485875704,
+        "lower_ns": 24352.87058615819,
+        "upper_ns": 24731.725517890773
+      }
+    },
+    {
+      "id": "transaction/large/clustered/backspace/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 302624.4215501253,
+        "lower_ns": 298500.0329862155,
+        "upper_ns": 308348.1376072369
+      },
+      "median": {
+        "point_ns": 298687.0267857143,
+        "lower_ns": 298271.4513157895,
+        "upper_ns": 305351.5231578947
+      }
+    },
+    {
+      "id": "transaction/large/clustered/backspace/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 3499109.542276335,
+        "lower_ns": 3462976.6992589287,
+        "upper_ns": 3545594.1299494943
+      },
+      "median": {
+        "point_ns": 3491837.413149351,
+        "lower_ns": 3445554.5090909093,
+        "upper_ns": 3515794.3454545457
+      }
+    },
+    {
+      "id": "transaction/large/clustered/insert/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1713.0006273290219,
+        "lower_ns": 1690.9856607568358,
+        "upper_ns": 1728.1746727890377
+      },
+      "median": {
+        "point_ns": 1722.2358624106448,
+        "lower_ns": 1709.661499988204,
+        "upper_ns": 1729.85923265725
+      }
+    },
+    {
+      "id": "transaction/large/clustered/insert/10",
+      "throughput": null,
+      "mean": {
+        "point_ns": 3381.4875216067494,
+        "lower_ns": 3331.4854367523876,
+        "upper_ns": 3428.230776086992
+      },
+      "median": {
+        "point_ns": 3403.6690965092403,
+        "lower_ns": 3348.168948208989,
+        "upper_ns": 3407.315173342894
+      }
+    },
+    {
+      "id": "transaction/large/clustered/insert/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 20740.652253441433,
+        "lower_ns": 20082.416425205607,
+        "upper_ns": 21311.43130969942
+      },
+      "median": {
+        "point_ns": 21243.94214300348,
+        "lower_ns": 19810.394283958205,
+        "upper_ns": 21544.594774685123
+      }
+    },
+    {
+      "id": "transaction/large/clustered/insert/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 249729.73294008587,
+        "lower_ns": 246730.93719281806,
+        "upper_ns": 252499.96551522246
+      },
+      "median": {
+        "point_ns": 251087.7457308743,
+        "lower_ns": 246665.15027322405,
+        "upper_ns": 252352.6467213115
+      }
+    },
+    {
+      "id": "transaction/large/clustered/insert/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 2626589.3194614514,
+        "lower_ns": 2597106.755515873,
+        "upper_ns": 2652337.8357936507
+      },
+      "median": {
+        "point_ns": 2651424.6714285715,
+        "lower_ns": 2588493.1696428573,
+        "upper_ns": 2661681.8928571427
+      }
+    },
+    {
+      "id": "transaction/large/clustered/map/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1665.313321504586,
+        "lower_ns": 1632.5596136304405,
+        "upper_ns": 1695.5154315980367
+      },
+      "median": {
+        "point_ns": 1674.406600208496,
+        "lower_ns": 1641.1446977735582,
+        "upper_ns": 1684.250852445487
+      }
+    },
+    {
+      "id": "transaction/large/clustered/map/10",
+      "throughput": null,
+      "mean": {
+        "point_ns": 2572.364118038827,
+        "lower_ns": 2410.0708932934513,
+        "upper_ns": 2688.260120569807
+      },
+      "median": {
+        "point_ns": 2683.0741522313165,
+        "lower_ns": 2510.7476703480916,
+        "upper_ns": 2710.3519940270753
+      }
+    },
+    {
+      "id": "transaction/large/clustered/map/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 5872.581401866674,
+        "lower_ns": 5627.074269999565,
+        "upper_ns": 6102.313550717283
+      },
+      "median": {
+        "point_ns": 5991.7440452023275,
+        "lower_ns": 5506.092062525376,
+        "upper_ns": 6122.530776927092
+      }
+    },
+    {
+      "id": "transaction/large/clustered/map/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 43711.654776319825,
+        "lower_ns": 43359.280352756665,
+        "upper_ns": 44045.78112697591
+      },
+      "median": {
+        "point_ns": 43881.334875690605,
+        "lower_ns": 43174.38581952118,
+        "upper_ns": 44243.44459791283
+      }
+    },
+    {
+      "id": "transaction/large/clustered/map/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 498773.3928577534,
+        "lower_ns": 491709.58398724056,
+        "upper_ns": 504421.27240213676
+      },
+      "median": {
+        "point_ns": 503678.966025641,
+        "lower_ns": 492673.44538461533,
+        "upper_ns": 505209.3173076923
+      }
+    },
+    {
+      "id": "transaction/large/spread/backspace/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1027.49359970236,
+        "lower_ns": 1015.7803204340273,
+        "upper_ns": 1036.47460028516
+      },
+      "median": {
+        "point_ns": 1033.154632730047,
+        "lower_ns": 1021.0422759575581,
+        "upper_ns": 1038.7142203195863
+      }
+    },
+    {
+      "id": "transaction/large/spread/backspace/10",
+      "throughput": null,
+      "mean": {
+        "point_ns": 13111.256910572938,
+        "lower_ns": 11327.866431194243,
+        "upper_ns": 15441.757648342284
+      },
+      "median": {
+        "point_ns": 11431.291578715918,
+        "lower_ns": 11119.06729802739,
+        "upper_ns": 14180.592348284961
+      }
+    },
+    {
+      "id": "transaction/large/spread/backspace/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 85031.23421149574,
+        "lower_ns": 84245.59708460643,
+        "upper_ns": 86310.19089143506
+      },
+      "median": {
+        "point_ns": 84378.1129598028,
+        "lower_ns": 84168.58276450512,
+        "upper_ns": 84954.22086786933
+      }
+    },
+    {
+      "id": "transaction/large/spread/backspace/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1791662.4849625218,
+        "lower_ns": 1766515.046888338,
+        "upper_ns": 1817002.7678240738
+      },
+      "median": {
+        "point_ns": 1803713.2881944445,
+        "lower_ns": 1750150.211111111,
+        "upper_ns": 1815635.3166666667
+      }
+    },
+    {
+      "id": "transaction/large/spread/backspace/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 19008992.712142855,
+        "lower_ns": 18074734.488333333,
+        "upper_ns": 19844807.554285713
+      },
+      "median": {
+        "point_ns": 19713800.166666664,
+        "lower_ns": 17282423.166666668,
+        "upper_ns": 19897536.25
+      }
+    },
+    {
+      "id": "transaction/large/spread/insert/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1742.6949851273014,
+        "lower_ns": 1710.8034076972408,
+        "upper_ns": 1764.227841593376
+      },
+      "median": {
+        "point_ns": 1751.276850091118,
+        "lower_ns": 1740.671600573119,
+        "upper_ns": 1771.8858153078204
+      }
+    },
+    {
+      "id": "transaction/large/spread/insert/10",
+      "throughput": null,
+      "mean": {
+        "point_ns": 16785.696643998734,
+        "lower_ns": 16055.749551120287,
+        "upper_ns": 17678.54562289434
+      },
+      "median": {
+        "point_ns": 16591.026363080215,
+        "lower_ns": 15901.897826336317,
+        "upper_ns": 17515.238934224755
+      }
+    },
+    {
+      "id": "transaction/large/spread/insert/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 152566.99109765555,
+        "lower_ns": 149020.72130432972,
+        "upper_ns": 155949.08047540937
+      },
+      "median": {
+        "point_ns": 153513.2040229885,
+        "lower_ns": 147030.74377394636,
+        "upper_ns": 157833.8842364532
+      }
+    },
+    {
+      "id": "transaction/large/spread/insert/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 2165395.1598866214,
+        "lower_ns": 2142336.5530527215,
+        "upper_ns": 2189292.715
+      },
+      "median": {
+        "point_ns": 2176044.1785714286,
+        "lower_ns": 2125346.8605442178,
+        "upper_ns": 2191806.25
+      }
+    },
+    {
+      "id": "transaction/large/spread/insert/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 19161363.835376985,
+        "lower_ns": 18749414.131700892,
+        "upper_ns": 19567001.931259423
+      },
+      "median": {
+        "point_ns": 19335476.616666667,
+        "lower_ns": 18549126.042857144,
+        "upper_ns": 19617541.434027776
+      }
+    },
+    {
+      "id": "transaction/large/spread/map/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1706.6182219404914,
+        "lower_ns": 1677.2821489247276,
+        "upper_ns": 1730.1844711512633
+      },
+      "median": {
+        "point_ns": 1709.332253911471,
+        "lower_ns": 1687.3526340732587,
+        "upper_ns": 1739.255469179967
+      }
+    },
+    {
+      "id": "transaction/large/spread/map/10",
+      "throughput": null,
+      "mean": {
+        "point_ns": 2277.528431667765,
+        "lower_ns": 2252.7221235218467,
+        "upper_ns": 2301.2082051221732
+      },
+      "median": {
+        "point_ns": 2289.956455255481,
+        "lower_ns": 2238.5456541513754,
+        "upper_ns": 2306.507731877921
+      }
+    },
+    {
+      "id": "transaction/large/spread/map/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 7349.09120950621,
+        "lower_ns": 7330.3482627132635,
+        "upper_ns": 7366.944875699875
+      },
+      "median": {
+        "point_ns": 7353.082975282976,
+        "lower_ns": 7329.246303996304,
+        "upper_ns": 7365.886598136598
+      }
+    },
+    {
+      "id": "transaction/large/spread/map/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 163343.68052999084,
+        "lower_ns": 162384.39981925368,
+        "upper_ns": 164486.7899771062
+      },
+      "median": {
+        "point_ns": 163001.7061698718,
+        "lower_ns": 162036.81570512822,
+        "upper_ns": 164172.2920673077
+      }
+    },
+    {
+      "id": "transaction/large/spread/map/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 2042068.8226763667,
+        "lower_ns": 2017516.7335097003,
+        "upper_ns": 2065774.7135267854
+      },
+      "median": {
+        "point_ns": 2047520.7592592593,
+        "lower_ns": 2006943.3070987654,
+        "upper_ns": 2077137.6
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/backspace/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 663.8402177831463,
+        "lower_ns": 662.1347350304254,
+        "upper_ns": 665.4529067786743
+      },
+      "median": {
+        "point_ns": 666.4428825932175,
+        "lower_ns": 665.294306049822,
+        "upper_ns": 667.3344083629893
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/backspace/10",
+      "throughput": null,
+      "mean": {
+        "point_ns": 2278.279027445576,
+        "lower_ns": 2273.975059166927,
+        "upper_ns": 2283.191536461085
+      },
+      "median": {
+        "point_ns": 2271.5283244906173,
+        "lower_ns": 2269.1509657075285,
+        "upper_ns": 2274.549457364341
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/backspace/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 16473.87794034964,
+        "lower_ns": 16458.400852316237,
+        "upper_ns": 16490.725369446227
+      },
+      "median": {
+        "point_ns": 16469.246803069054,
+        "lower_ns": 16446.932806324112,
+        "upper_ns": 16489.381724392042
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/backspace/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 214508.6308686658,
+        "lower_ns": 214317.93643951946,
+        "upper_ns": 214726.71930666428
+      },
+      "median": {
+        "point_ns": 214498.45146056474,
+        "lower_ns": 214198.48936170212,
+        "upper_ns": 214647.2365079365
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/backspace/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 2704987.7325,
+        "lower_ns": 2703584.7475,
+        "upper_ns": 2706450.3594687497
+      },
+      "median": {
+        "point_ns": 2704354.875,
+        "lower_ns": 2703014.625,
+        "upper_ns": 2705576.375
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/insert/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 907.2194039783061,
+        "lower_ns": 898.7623330333789,
+        "upper_ns": 916.4314707765393
+      },
+      "median": {
+        "point_ns": 887.4356666666667,
+        "lower_ns": 883.470288888889,
+        "upper_ns": 897.9534237288135
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/insert/10",
+      "throughput": null,
+      "mean": {
+        "point_ns": 2103.357374033168,
+        "lower_ns": 2096.123706277712,
+        "upper_ns": 2111.0802688153435
+      },
+      "median": {
+        "point_ns": 2091.6745310848137,
+        "lower_ns": 2084.673078217933,
+        "upper_ns": 2104.5829896907217
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/insert/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 13670.91266047954,
+        "lower_ns": 13626.348338750628,
+        "upper_ns": 13744.610882721186
+      },
+      "median": {
+        "point_ns": 13646.148200757576,
+        "lower_ns": 13617.788668320927,
+        "upper_ns": 13665.896901709402
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/insert/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 162224.64098493647,
+        "lower_ns": 161993.08128665207,
+        "upper_ns": 162547.41739389783
+      },
+      "median": {
+        "point_ns": 162145.31666666665,
+        "lower_ns": 162013.4125,
+        "upper_ns": 162278.52380952382
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/insert/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 2018839.3270000003,
+        "lower_ns": 2017696.4492999997,
+        "upper_ns": 2020092.4150500002
+      },
+      "median": {
+        "point_ns": 2018016.95,
+        "lower_ns": 2017057.9,
+        "upper_ns": 2018952.5
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/map/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 956.4704081996168,
+        "lower_ns": 948.81576713924,
+        "upper_ns": 964.3143629359583
+      },
+      "median": {
+        "point_ns": 941.9788921393657,
+        "lower_ns": 935.2649895501422,
+        "upper_ns": 951.6606043412676
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/map/10",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1278.5790304415812,
+        "lower_ns": 1273.1187063895438,
+        "upper_ns": 1284.5084972765933
+      },
+      "median": {
+        "point_ns": 1265.7014367816091,
+        "lower_ns": 1262.8526195366267,
+        "upper_ns": 1273.7850353669319
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/map/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 3489.6474593966686,
+        "lower_ns": 3484.4150820940245,
+        "upper_ns": 3495.6197242205258
+      },
+      "median": {
+        "point_ns": 3480.2320811466348,
+        "lower_ns": 3477.3231756214914,
+        "upper_ns": 3485.5609833971903
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/map/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 30615.41469008886,
+        "lower_ns": 30551.415340523497,
+        "upper_ns": 30708.03737506491
+      },
+      "median": {
+        "point_ns": 30543.640780730897,
+        "lower_ns": 30513.119298245612,
+        "upper_ns": 30575.26736111111
+      }
+    },
+    {
+      "id": "transaction/medium/clustered/map/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 359595.4432086702,
+        "lower_ns": 359208.56392913364,
+        "upper_ns": 360053.5312674905
+      },
+      "median": {
+        "point_ns": 358896.8148275862,
+        "lower_ns": 358677.8466228893,
+        "upper_ns": 359138.28571428574
+      }
+    },
+    {
+      "id": "transaction/medium/spread/backspace/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 672.4706239111839,
+        "lower_ns": 669.6550052117765,
+        "upper_ns": 675.4491833494271
+      },
+      "median": {
+        "point_ns": 668.3773296796455,
+        "lower_ns": 667.4706252880627,
+        "upper_ns": 670.7956485488546
+      }
+    },
+    {
+      "id": "transaction/medium/spread/backspace/10",
+      "throughput": null,
+      "mean": {
+        "point_ns": 5897.349676104927,
+        "lower_ns": 5882.012220668678,
+        "upper_ns": 5916.604838030738
+      },
+      "median": {
+        "point_ns": 5883.543101938985,
+        "lower_ns": 5871.6231684981685,
+        "upper_ns": 5897.55614973262
+      }
+    },
+    {
+      "id": "transaction/medium/spread/backspace/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 63229.69425856665,
+        "lower_ns": 60523.14766216274,
+        "upper_ns": 66466.29456032935
+      },
+      "median": {
+        "point_ns": 58787.100877192985,
+        "lower_ns": 58328.69881355933,
+        "upper_ns": 59394.41803278688
+      }
+    },
+    {
+      "id": "transaction/medium/spread/backspace/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 664472.5404761904,
+        "lower_ns": 662247.1243928573,
+        "upper_ns": 666777.2795714287
+      },
+      "median": {
+        "point_ns": 665882.0714285714,
+        "lower_ns": 664437.9523809524,
+        "upper_ns": 667177.5714285715
+      }
+    },
+    {
+      "id": "transaction/medium/spread/backspace/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 3353872.986666668,
+        "lower_ns": 3350261.6114583323,
+        "upper_ns": 3357974.2362499996
+      },
+      "median": {
+        "point_ns": 3353429.5,
+        "lower_ns": 3347793.916666667,
+        "upper_ns": 3356666.1666666665
+      }
+    },
+    {
+      "id": "transaction/medium/spread/insert/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1000.6097076241803,
+        "lower_ns": 991.8458240306098,
+        "upper_ns": 1009.9588152482836
+      },
+      "median": {
+        "point_ns": 987.4229221267501,
+        "lower_ns": 975.1705443867179,
+        "upper_ns": 997.3614119944591
+      }
+    },
+    {
+      "id": "transaction/medium/spread/insert/10",
+      "throughput": null,
+      "mean": {
+        "point_ns": 8946.648873137736,
+        "lower_ns": 8861.489551235325,
+        "upper_ns": 9037.117854636952
+      },
+      "median": {
+        "point_ns": 8770.264845975784,
+        "lower_ns": 8686.015385017785,
+        "upper_ns": 8953.971436803386
+      }
+    },
+    {
+      "id": "transaction/medium/spread/insert/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 81368.6736878541,
+        "lower_ns": 79751.39626493202,
+        "upper_ns": 83042.75565526808
+      },
+      "median": {
+        "point_ns": 79051.00852272726,
+        "lower_ns": 75989.93859649122,
+        "upper_ns": 83523.53333333334
+      }
+    },
+    {
+      "id": "transaction/medium/spread/insert/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 632952.5664000001,
+        "lower_ns": 628264.7653500001,
+        "upper_ns": 638068.7388500001
+      },
+      "median": {
+        "point_ns": 623380.34,
+        "lower_ns": 620848.8,
+        "upper_ns": 629302.84
+      }
+    },
+    {
+      "id": "transaction/medium/spread/insert/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 2635176.4375,
+        "lower_ns": 2632379.0589374998,
+        "upper_ns": 2638152.8206562498
+      },
+      "median": {
+        "point_ns": 2631966.75,
+        "lower_ns": 2629389.125,
+        "upper_ns": 2635897.0
+      }
+    },
+    {
+      "id": "transaction/medium/spread/map/1",
+      "throughput": null,
+      "mean": {
+        "point_ns": 984.4893450942167,
+        "lower_ns": 967.5551156166656,
+        "upper_ns": 1005.5678278812134
+      },
+      "median": {
+        "point_ns": 961.4479313173933,
+        "lower_ns": 947.4164659072422,
+        "upper_ns": 971.1991395714404
+      }
+    },
+    {
+      "id": "transaction/medium/spread/map/10",
+      "throughput": null,
+      "mean": {
+        "point_ns": 1455.5991711564957,
+        "lower_ns": 1450.203627838309,
+        "upper_ns": 1461.4368820869036
+      },
+      "median": {
+        "point_ns": 1442.9817231441484,
+        "lower_ns": 1438.881271938881,
+        "upper_ns": 1453.930865541644
+      }
+    },
+    {
+      "id": "transaction/medium/spread/map/100",
+      "throughput": null,
+      "mean": {
+        "point_ns": 5414.404771284175,
+        "lower_ns": 5405.75823877058,
+        "upper_ns": 5425.331966251537
+      },
+      "median": {
+        "point_ns": 5408.133727477478,
+        "lower_ns": 5403.567287784679,
+        "upper_ns": 5411.543367346939
+      }
+    },
+    {
+      "id": "transaction/medium/spread/map/1000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 71981.7189451027,
+        "lower_ns": 71767.16867151982,
+        "upper_ns": 72288.03225252066
+      },
+      "median": {
+        "point_ns": 71906.73041474653,
+        "lower_ns": 71766.70939849624,
+        "upper_ns": 72011.32861616163
+      }
+    },
+    {
+      "id": "transaction/medium/spread/map/10000",
+      "throughput": null,
+      "mean": {
+        "point_ns": 462448.6198089153,
+        "lower_ns": 461947.1564677376,
+        "upper_ns": 463011.5581860263
+      },
+      "median": {
+        "point_ns": 461646.3930148535,
+        "lower_ns": 461190.51784633996,
+        "upper_ns": 462330.29785714287
+      }
+    }
+  ]
+}

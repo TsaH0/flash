@@ -25,7 +25,10 @@ use flash_core::internals::{
 };
 use std::num::NonZeroU8;
 
-use flash_core::{ChangeSet, Direction, Motion, Movement, Range, Selection, Text, Transaction};
+use flash_core::{
+    ChangeSet, Direction, Editor, Event, KeyCode, KeyEvent, Motion, Movement, Range, Selection,
+    Text, Transaction, ViewId,
+};
 
 struct Counting;
 
@@ -216,6 +219,71 @@ fn run_fixture(fx: &Fixture) -> Vec<Report> {
             transaction_apply(&txn, t, s).unwrap();
         },
     ));
+    // Stage 4: the same edit through Document::commit (via the editor),
+    // and keys through Editor::handle. Each sample starts from a clone of a
+    // base editor (untimed): text snapshot-shared, empty revision log.
+    let editor_with = |views: usize| {
+        let mut ed = Editor::new(80, 24);
+        let doc = ed.open(base.snapshot(), None);
+        let ids: Vec<ViewId> = (0..views).map(|_| ed.open_view(doc).unwrap()).collect();
+        ed.set_focus(ids[0]).unwrap();
+        (ed, ids)
+    };
+    let (one_view, one_ids) = editor_with(1);
+    let (two_views, two_ids) = editor_with(2);
+    out.push(measure(
+        name,
+        "doc commit insert char (1 view)",
+        |i| {
+            let mut ed = one_view.clone();
+            ed.set_selection(one_ids[0], Selection::point(offsets[i]))
+                .unwrap();
+            ed
+        },
+        |ed| {
+            let v = one_ids[0];
+            let doc = ed.view_document(v).unwrap().1;
+            let txn = Transaction::insert(doc.text(), doc.selection(v).unwrap(), "x").unwrap();
+            ed.commit(v, txn).unwrap();
+        },
+    ));
+    out.push(measure(
+        name,
+        "doc commit insert char (2 views)",
+        |i| {
+            let mut ed = two_views.clone();
+            ed.set_selection(two_ids[0], Selection::point(offsets[i]))
+                .unwrap();
+            ed.set_selection(two_ids[1], Selection::point(offsets[(i + 1) % ITERS]))
+                .unwrap();
+            ed
+        },
+        |ed| {
+            let v = two_ids[0];
+            let doc = ed.view_document(v).unwrap().1;
+            let txn = Transaction::insert(doc.text(), doc.selection(v).unwrap(), "x").unwrap();
+            ed.commit(v, txn).unwrap();
+        },
+    ));
+    for (label, key) in [
+        ("editor handle key 'x'", KeyCode::Char('x')),
+        ("editor handle Right", KeyCode::Right),
+    ] {
+        let event = Event::Key(KeyEvent::plain(key));
+        out.push(measure(
+            name,
+            label,
+            |i| {
+                let mut ed = one_view.clone();
+                ed.set_selection(one_ids[0], Selection::point(offsets[i]))
+                    .unwrap();
+                ed
+            },
+            |ed| {
+                black_box(ed.handle(&event));
+            },
+        ));
+    }
     let tab = NonZeroU8::new(4).unwrap();
     for (label, motion) in [
         (
@@ -271,7 +339,7 @@ fn main() {
         common::unicode(),
     ];
     println!(
-        "{:<10} {:<32} {:>8} {:>8} {:>8} {:>10} {:>8} {:>10}",
+        "{:<10} {:<34} {:>8} {:>8} {:>8} {:>10} {:>8} {:>10}",
         "fixture", "op (ns)", "p50", "p95", "p99", "max", "allocs", "bytes"
     );
     let mut json = std::env::var_os("FLASH_BENCH_JSON")
@@ -279,7 +347,7 @@ fn main() {
     for fx in &fixtures {
         for r in run_fixture(fx) {
             println!(
-                "{:<10} {:<32} {:>8} {:>8} {:>8} {:>10} {:>8.2} {:>10.1}",
+                "{:<10} {:<34} {:>8} {:>8} {:>8} {:>10} {:>8.2} {:>10.1}",
                 r.fixture, r.op, r.p50, r.p95, r.p99, r.max, r.allocs_per_op, r.bytes_per_op
             );
             if let Some(f) = json.as_mut() {
