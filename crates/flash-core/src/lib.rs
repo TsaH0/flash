@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod changeset;
+pub mod document;
 pub mod motion;
 pub mod selection;
 pub mod text;
@@ -23,6 +24,7 @@ pub mod fuzzing;
 pub mod internals;
 
 pub use changeset::{Assoc, ChangeSet, ChangeSetBuilder, ChangeSetError, Op};
+pub use document::{MapError, Revision, RevisionLog};
 pub use motion::{Motion, Movement};
 pub use selection::{Range, Selection, SelectionError};
 pub use text::{Direction, Text, TextBuilder, TextError, TextSlice};
