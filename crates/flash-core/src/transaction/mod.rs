@@ -33,7 +33,7 @@ mod build;
 pub(crate) mod reference;
 
 #[cfg(test)]
-mod proptests;
+pub(crate) mod proptests;
 #[cfg(test)]
 mod tests;
 
@@ -76,23 +76,39 @@ impl Transaction {
         text: &mut Text,
         selection: &mut Selection,
     ) -> Result<(), TransactionError> {
-        self.changes.validate(text)?;
-        let next = match &self.selection {
-            Some(next) => {
-                check_after(&self.changes, text, &endpoints(next))?;
-                next.clone()
-            }
-            None => {
-                selection.validate(text)?;
-                selection.map(&self.changes)?
-            }
-        };
+        let next = self.prepare(text, selection)?;
         if let Err(e) = self.changes.apply(text) {
             debug_assert!(false, "change set failed after validation: {e}");
             return Err(e.into());
         }
         *selection = next;
         Ok(())
+    }
+
+    /// The validation half of [`apply`](Self::apply): checks this
+    /// transaction against `text` and returns the selection that `selection`
+    /// becomes, without changing anything. O(ops + k log n).
+    pub(crate) fn prepare(
+        &self,
+        text: &Text,
+        selection: &Selection,
+    ) -> Result<Selection, TransactionError> {
+        self.changes.validate(text)?;
+        match &self.selection {
+            Some(next) => {
+                check_after(&self.changes, text, &endpoints(next))?;
+                Ok(next.clone())
+            }
+            None => {
+                selection.validate(text)?;
+                Ok(selection.map(&self.changes)?)
+            }
+        }
+    }
+
+    /// The change set, moved out (for the revision log).
+    pub(crate) fn into_changes(self) -> ChangeSet {
+        self.changes
     }
 }
 

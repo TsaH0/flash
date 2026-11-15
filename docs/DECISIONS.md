@@ -314,3 +314,62 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
   the ops; constructor-made selections are valid by construction, so it
   only guards hand-built transactions.
 - **Reopen when:** Stage 5 history needs grouped or merged transactions.
+
+## 014 — Documents own per-view selections; commit is the only text mutator
+
+- **Date:** 2026-11-15 (Stage 4)
+- **Decision:** `Document` holds its text, revision, revision log, path,
+  line ending, and a `SecondaryMap<ViewId, Selection>` with the selection
+  of every view showing it. `View` holds the document ID, scroll, and size.
+  `Document::commit(view, Transaction)` is the only way text changes: it
+  validates the change set and the origin view's new selection
+  (`Transaction::prepare`), maps every other view's selection, and only
+  then applies the text, stores the selections, increments the revision
+  (unless the change set is the identity), and moves the change set into
+  the log. `Transaction::apply` becomes `pub(crate)` (benchmarks reach it
+  through `internals`).
+- **Why:** the document can keep "every view's selection is valid for my
+  text" as a private invariant, and commit needs no access to the editor's
+  view table, so the all-or-nothing rule (DECISIONS 010, 013) covers every
+  view in one function. A selection-only (identity) commit does not map
+  other views, so their goal columns survive.
+- **Alternatives:** selections on `View` as PLAN Stage 4 sketched, with
+  commit on `Editor` (atomicity then spans two tables and every caller of
+  commit needs the editor); `Document::commit` taking `&mut` views (every
+  caller must split borrows; the document cannot own the invariant).
+- **Evidence:** `document/tests.rs` (`commit_maps_other_views`,
+  `failed_commit_changes_nothing`, `identity_commit_keeps_revision`);
+  `views_stay_valid_under_commits` (random commits from 1–3 views against a
+  String model and per-view `Selection::map`). Making commit skip mapping
+  other views fails the property.
+- **Trade-off:** a view's selection is looked up through its document
+  (`editor.selection(view)` does both lookups).
+- **Reopen if:** Stage 7 per-view state or Stage 8 markers need selections
+  outside the document.
+
+## 015 — Revision log bounds and stale-position mapping
+
+- **Date:** 2026-11-15 (Stage 4)
+- **Decision:** the log keeps `(revision, change set)` for consecutive
+  revisions, bounded by 1,024 entries and 2^20 ops in total, evicting the
+  oldest first and always keeping the newest. `map_from(from, positions,
+  assoc)` maps sorted positions through each entry after `from` in order
+  (never a composed change set, DECISIONS 009); `from` older than the log
+  is `Evicted`, newer than the document is `Future`.
+  `Document::map_from` also checks every result against the current text,
+  since a position that was not a char boundary at `from` cannot be
+  detected from the change sets alone; on any error the input is
+  unchanged.
+- **Why:** an entry bound alone is not a memory bound: one 10,000-cursor
+  edit holds about 20,000 ops, so 1,024 of them could keep hundreds of
+  megabytes. 2^20 ops is tens of megabytes at most.
+- **Alternatives:** compose old entries into one (loses positions,
+  DECISIONS 009); keep text snapshots per revision and diff (O(n));
+  unbounded log (memory grows with session length).
+- **Evidence:** `log_bounds_and_eviction`, `map_from_matches_sequential_map_pos`,
+  `map_from_validates_against_text`, and the end of
+  `views_stay_valid_under_commits` (log mapping equals chained `map_pos`).
+- **Trade-off:** mapping cost grows with the number of revisions behind;
+  a worker more than 1,024 edits behind must recompute.
+- **Reopen if:** Stage 9/10 measurements show background results falling
+  out of the log, or the bounds become options (PLAN 2.11).

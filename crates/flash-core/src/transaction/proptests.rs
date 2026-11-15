@@ -11,7 +11,7 @@ use crate::selection::proptests::assert_normalised;
 use crate::strategies::{selection_for, text_strategy};
 use crate::{Direction, Motion, Movement};
 
-fn intent() -> impl Strategy<Value = Intent> {
+pub(crate) fn intent() -> impl Strategy<Value = Intent> {
     prop_oneof![
         text_strategy(2).prop_map(Intent::Insert),
         Just(Intent::Delete),
@@ -21,7 +21,11 @@ fn intent() -> impl Strategy<Value = Intent> {
     ]
 }
 
-fn build(text: &Text, sel: &Selection, intent: &Intent) -> Result<Transaction, TransactionError> {
+pub(crate) fn build(
+    text: &Text,
+    sel: &Selection,
+    intent: &Intent,
+) -> Result<Transaction, TransactionError> {
     match intent {
         Intent::Insert(s) => Transaction::insert(text, sel, s),
         Intent::Delete => Transaction::delete(text, sel),

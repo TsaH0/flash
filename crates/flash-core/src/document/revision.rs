@@ -28,10 +28,6 @@ impl Revision {
     }
 
     /// The revision after this one. Saturates; 2^64 commits do not happen.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "called by Document::commit (next commit)")
-    )]
     pub(crate) fn next(self) -> Revision {
         Revision(self.0.saturating_add(1))
     }
@@ -51,7 +47,6 @@ impl fmt::Display for Revision {
 /// megabytes. The oldest entries are evicted first; the newest is always
 /// kept, even if it alone exceeds the op bound.
 #[derive(Debug, Clone)]
-#[cfg_attr(not(test), expect(dead_code, reason = "read by push (next commit)"))]
 pub struct RevisionLog {
     entries: VecDeque<(Revision, ChangeSet)>,
     ops: usize,
@@ -85,10 +80,6 @@ impl RevisionLog {
 
     /// Appends the change set that produced `revision`, which must follow
     /// the newest entry, then evicts the oldest entries over the bounds.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "called by Document::commit (next commit)")
-    )]
     pub(crate) fn push(&mut self, revision: Revision, changes: ChangeSet) {
         debug_assert!(
             self.entries
