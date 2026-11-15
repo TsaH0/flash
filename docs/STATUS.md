@@ -1,6 +1,6 @@
 # Flash status
 
-Updated: 2026-11-15, Stage 3 approved; Stage 4 in progress.
+Updated: 2026-11-16, end of Stage 4 (awaiting owner approval).
 
 ## Completed and tested
 
@@ -30,8 +30,20 @@ Updated: 2026-11-15, Stage 3 approved; Stage 4 in progress.
   validate-first atomic apply (DECISIONS 013); property-tested against a
   naive back-to-front model.
 - **Walking skeleton** (`apps/flash`): `flash <file>`, raw-mode full-redraw
-  editor over the core APIs, multi-cursor, no save; in-process end-to-end
-  latency bench.
+  frontend over the headless editor, multi-cursor, no save; in-process
+  end-to-end latency bench driven by a trace.
+- **Documents** (`crates/flash-core/src/document/`): `Document` with
+  revision, bounded revision log (`map_from` for stale positions), path,
+  line ending, and every view's selection; `Document::commit` is the only
+  text mutator (DECISIONS 014, 015). `Transaction::apply` is crate-private.
+- **Headless editor** (`editor/`): `Editor` with slotmap `DocumentId` /
+  `ViewId`, views, focus, scrolling; `Editor::handle(Event) -> Effects` on
+  raw input; temporary key map in `editor/keys.rs` (Stage 7 deletes it).
+- **Traces** (`trace.rs`): JSON Lines record/replay of raw input
+  (DECISIONS 016); `FLASH_TRACE=<file>` records, `flash --replay <trace>`
+  replays headless and prints latency.
+- **Standing benchmark** (`benches/document.rs`): N views × 10k
+  selections, one edit, full commit.
 - **Benchmarks** (`benches/text.rs`, `benches/latency.rs`): Criterion suite
   plus per-operation p50/p95/p99/max and allocation counts on deterministic
   fixtures. Results in `bench/results/`. Interactive skeleton latency (real
@@ -42,16 +54,21 @@ Updated: 2026-11-15, Stage 3 approved; Stage 4 in progress.
 - Stage 3 had no independent fresh-context review; the owner approved it
   without one (2026-11-15). The implementer's adversarial pass is in
   [stage-3.md](stages/stage-3.md) section G.
+- Stage 4 has no independent fresh-context review (owner rule: no
+  delegation without a request); the implementer's review is in
+  [stage-4.md](stages/stage-4.md) section G.
+- `FLASH_TRACE` recording in a real terminal has no automated test (needs
+  a TTY); the format and `--replay` are tested.
 
 ## In progress
 
-- Stage 4: documents, views, revisions, headless editor, trace replay
-  (branch `stage-4`; plan
-  [2026-11-15-stage-4-documents-editor.md](superpowers/plans/2026-11-15-stage-4-documents-editor.md)).
+- Nothing. Stage 4 is waiting for review and approval
+  ([stage-4.md](stages/stage-4.md)).
 
 ## Planned
 
-- Stages 5–11 as in [PLAN.md](PLAN.md).
+- Stage 5: undo, redo, branching history (next, after approval).
+- Stages 6–11 as in [PLAN.md](PLAN.md).
 
 ## Deferred
 

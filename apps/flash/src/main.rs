@@ -66,6 +66,16 @@ fn now_ns(start: Instant) -> u64 {
 
 fn run(path: &Path) -> Result<(), String> {
     let content = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    for var in ["FLASH_TRACE", "FLASH_LATENCY_LOG"] {
+        if let Some(out) = env::var_os(var) {
+            if same_file(Path::new(&out), path) {
+                return Err(format!(
+                    "{var}={}: is the document; refusing to write to it",
+                    Path::new(&out).display()
+                ));
+            }
+        }
+    }
     let (width, height) = terminal::size().unwrap_or((80, 24));
     let text = Text::from(content);
     let name = path.display().to_string();
@@ -208,6 +218,24 @@ fn replay(trace_path: &Path) -> Result<(), String> {
         None => println!(r#"{{"source":"replay","events":0}}"#),
     }
     Ok(())
+}
+
+/// Whether `a` and `b` name the same existing file: equal canonical paths
+/// (symlinks resolved) or, on Unix, the same device and inode (hard links).
+fn same_file(a: &Path, b: &Path) -> bool {
+    if let (Ok(x), Ok(y)) = (fs::canonicalize(a), fs::canonicalize(b)) {
+        if x == y {
+            return true;
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let (Ok(x), Ok(y)) = (fs::metadata(a), fs::metadata(b)) {
+            return x.dev() == y.dev() && x.ino() == y.ino();
+        }
+    }
+    false
 }
 
 fn append_line(path: &Path, line: &str) -> io::Result<()> {

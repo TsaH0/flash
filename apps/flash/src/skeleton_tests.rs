@@ -225,3 +225,19 @@ fn random_events_never_panic() {
         }
     }
 }
+
+/// A hostile trace can resize to 65535×65535: rendering must stay bounded
+/// (one cursor move and clear per row, nothing per empty cell).
+#[test]
+fn render_survives_huge_screen() {
+    let mut ed = editor_with("abc\n漢字", 80, 24);
+    ed.handle(&Event::Resize {
+        width: u16::MAX,
+        height: u16::MAX,
+    });
+    ed.handle(&Event::Key(KeyEvent::new(KeyCode::End, Modifiers::CTRL)));
+    let start = std::time::Instant::now();
+    let out = rendered(&ed, "t");
+    assert!(out.len() < 2 << 20, "{} bytes", out.len());
+    assert!(start.elapsed() < std::time::Duration::from_secs(2));
+}

@@ -119,3 +119,37 @@ fn replay_rejects_bad_traces() {
         assert!(stderr.contains(expect), "{}: {stderr}", path.display());
     }
 }
+
+/// `FLASH_TRACE` or `FLASH_LATENCY_LOG` naming the document itself (or a
+/// symlink to it) must not truncate or append to it: the skeleton cannot
+/// save, so the file would be lost.
+#[test]
+fn output_files_never_clobber_the_document() {
+    let dir = scratch("output_files_never_clobber_the_document");
+    let doc = dir.join("doc.txt");
+    let link = dir.join("link.txt");
+    fs::write(&doc, "precious\n").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&doc, &link).unwrap();
+    #[cfg(not(unix))]
+    let link = doc.clone();
+    for var in ["FLASH_TRACE", "FLASH_LATENCY_LOG"] {
+        for target in [&doc, &link] {
+            let out = flash()
+                .arg(&doc)
+                .env(var, target)
+                .stdin(std::process::Stdio::null())
+                .output()
+                .unwrap();
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert_eq!(
+                out.status.code(),
+                Some(1),
+                "{var}={}: {stderr}",
+                target.display()
+            );
+            assert!(stderr.contains("is the document"), "{var}: {stderr}");
+            assert_eq!(fs::read_to_string(&doc).unwrap(), "precious\n", "{var}");
+        }
+    }
+}
