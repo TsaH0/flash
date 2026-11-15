@@ -30,6 +30,8 @@ compact_str.workspace = true
 smallvec.workspace = true
 # Generational IDs for documents and views (PLAN Stage 4).
 slotmap.workspace = true
+# Serialisable input events for trace record and replay (PLAN Stage 4).
+serde.workspace = true
 # Display columns for vertical motion and rendering.
 unicode-width.workspace = true
 arbitrary = { workspace = true, optional = true }

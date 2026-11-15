@@ -26,7 +26,9 @@ pub mod internals;
 
 pub use changeset::{Assoc, ChangeSet, ChangeSetBuilder, ChangeSetError, Op};
 pub use document::{CommitError, Document, LineEnding, MapError, Revision, RevisionLog};
-pub use editor::{DocumentId, ViewId};
+pub use editor::{
+    DocumentId, Editor, EditorError, Effects, Event, KeyCode, KeyEvent, Modifiers, View, ViewId,
+};
 pub use motion::{Motion, Movement};
 pub use selection::{Range, Selection, SelectionError};
 pub use text::{Direction, Text, TextBuilder, TextError, TextSlice};

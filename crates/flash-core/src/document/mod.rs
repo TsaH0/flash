@@ -222,13 +222,11 @@ impl Document {
     }
 
     /// Starts tracking a selection for `view`, at offset 0.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by Editor (next commit)"))]
     pub(crate) fn add_view(&mut self, view: ViewId) {
         self.selections.insert(view, Selection::point(0));
     }
 
     /// Stops tracking `view`; `false` if it was not tracked.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by Editor (next commit)"))]
     pub(crate) fn remove_view(&mut self, view: ViewId) -> bool {
         self.selections.remove(view).is_some()
     }
