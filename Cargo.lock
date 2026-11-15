@@ -427,6 +427,7 @@ dependencies = [
  "crop",
  "proptest",
  "serde",
+ "serde_json",
  "slotmap",
  "smallvec",
  "unicode-segmentation",

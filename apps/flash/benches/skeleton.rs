@@ -1,7 +1,8 @@
 //! End-to-end latency of the walking skeleton without a terminal.
 //!
-//! Replays a fixed key trace through `Skeleton::handle` + `Skeleton::render`
-//! into an in-memory sink (cleared per event) and reports p50/p95/p99/max per
+//! Replays a fixed key trace (written and read back through
+//! `flash_core::trace`) through `Editor::handle` + `Skeleton::render` into an
+//! in-memory sink (cleared per event) and reports p50/p95/p99/max per
 //! fixture and viewport. This is the dequeue-to-flush path minus the
 //! terminal write itself (PLAN section 4, "End-to-end terminal path").
 //!
@@ -12,21 +13,24 @@
 mod common;
 
 use std::hint::black_box;
-use std::io::Write;
+use std::io::{Cursor, Write};
 use std::time::Instant;
 
 use common::Fixture;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use flash_app::latency::summarize;
 use flash_app::skeleton::Skeleton;
-use flash_core::{Range, Selection, Text};
+use flash_core::trace::{
+    self, DEFAULT_MAX_LINE, TRACE_VERSION, TraceEntry, TraceHeader, TraceReader, TraceSource,
+    TraceWriter,
+};
+use flash_core::{Event, KeyCode, KeyEvent, Modifiers, Text};
 
 const REPEATS: usize = 100;
 
 /// The 20-event pattern: type, delete, move, newline, add a cursor.
 fn pattern() -> Vec<Event> {
     let key = |code, modifiers| Event::Key(KeyEvent::new(code, modifiers));
-    let plain = |code| key(code, KeyModifiers::NONE);
+    let plain = |code| key(code, Modifiers::NONE);
     let mut v: Vec<Event> = (0..8).map(|_| plain(KeyCode::Char('x'))).collect();
     v.extend([
         plain(KeyCode::Backspace),
@@ -36,30 +40,62 @@ fn pattern() -> Vec<Event> {
         plain(KeyCode::Down),
         plain(KeyCode::Down),
         plain(KeyCode::Up),
-        key(KeyCode::Right, KeyModifiers::CONTROL),
+        key(KeyCode::Right, Modifiers::CTRL),
         plain(KeyCode::End),
         plain(KeyCode::Home),
         plain(KeyCode::Enter),
-        key(KeyCode::Down, KeyModifiers::ALT),
+        key(KeyCode::Down, Modifiers::ALT),
     ]);
     v
 }
 
+/// The pattern repeated `REPEATS` times as a trace starting from the
+/// middle line of `text`, written and read back so the bench drives the
+/// editor from a real trace.
+fn trace_for(fx: &Fixture, text: &Text, width: u16, height: u16) -> (TraceHeader, Vec<TraceEntry>) {
+    let middle = text.line_start(text.line_count() / 2).unwrap();
+    let header = TraceHeader {
+        flash_trace: TRACE_VERSION,
+        document: TraceSource::Fixture(fx.name.to_owned()),
+        len: text.byte_len() as u64,
+        hash: trace::content_hash(text),
+        size: (width, height),
+        cursor: middle as u64,
+    };
+    let events = pattern();
+    let mut writer = TraceWriter::new(Vec::new(), &header).unwrap();
+    for (i, event) in events
+        .iter()
+        .cycle()
+        .take(events.len() * REPEATS)
+        .enumerate()
+    {
+        writer
+            .write(&TraceEntry {
+                t_ns: i as u64,
+                event: event.clone(),
+            })
+            .unwrap();
+    }
+    let bytes = writer.into_inner().unwrap();
+    let reader = TraceReader::new(Cursor::new(bytes), DEFAULT_MAX_LINE).unwrap();
+    let header = reader.header().clone();
+    let entries = reader.collect::<Result<Vec<_>, _>>().unwrap();
+    (header, entries)
+}
+
 fn run(fx: &Fixture, width: u16, height: u16) -> Vec<u64> {
     let text = Text::from(fx.content.as_str());
-    let middle = text.line_start(text.line_count() / 2).unwrap();
-    let mut skeleton = Skeleton::new(fx.name.to_owned(), text, width, height);
-    skeleton
-        .set_selection(Selection::single(Range::point(middle)))
-        .unwrap();
-    let events = pattern();
+    let (header, entries) = trace_for(fx, &text, width, height);
+    let (mut editor, _) = trace::start(&header, text).unwrap();
+    let skeleton = Skeleton::new(fx.name.to_owned());
     let mut sink: Vec<u8> = Vec::with_capacity(1 << 16);
-    let mut samples = Vec::with_capacity(events.len() * REPEATS);
-    for event in events.iter().cycle().take(events.len() * REPEATS) {
+    let mut samples = Vec::with_capacity(entries.len());
+    for entry in &entries {
         sink.clear();
         let start = Instant::now();
-        skeleton.handle(event);
-        skeleton.render(&mut sink).unwrap();
+        editor.handle(&entry.event);
+        skeleton.render(&editor, &mut sink).unwrap();
         sink.flush().unwrap();
         samples.push(start.elapsed().as_nanos() as u64);
         black_box(&sink);

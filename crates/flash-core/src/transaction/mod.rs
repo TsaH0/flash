@@ -69,9 +69,10 @@ impl Transaction {
     /// (checked without building it), or the current selection valid for
     /// `text`. On error neither argument changes. O(ops · log n + k log n).
     ///
-    /// Public until `Document::commit` (Stage 4) becomes the only caller;
-    /// then `pub(crate)`.
-    pub fn apply(
+    /// Crate-private: `Document::commit` is the only text mutator (DECISIONS
+    /// 014). Benchmarks reach it through `internals::transaction_apply`.
+    #[cfg(any(test, feature = "internals"))]
+    pub(crate) fn apply(
         &self,
         text: &mut Text,
         selection: &mut Selection,

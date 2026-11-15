@@ -20,7 +20,9 @@ use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::time::Instant;
 
 use common::{Fixture, random_offsets, random_ranges};
-use flash_core::internals::{changeset_apply, text_delete, text_insert, text_replace};
+use flash_core::internals::{
+    changeset_apply, text_delete, text_insert, text_replace, transaction_apply,
+};
 use std::num::NonZeroU8;
 
 use flash_core::{ChangeSet, Direction, Motion, Movement, Range, Selection, Text, Transaction};
@@ -202,7 +204,7 @@ fn run_fixture(fx: &Fixture) -> Vec<Report> {
         |i| (base.snapshot(), Selection::point(offsets[i])),
         |(t, s)| {
             let txn = Transaction::insert(t, s, "x").unwrap();
-            txn.apply(t, s).unwrap();
+            transaction_apply(&txn, t, s).unwrap();
         },
     ));
     out.push(measure(
@@ -211,7 +213,7 @@ fn run_fixture(fx: &Fixture) -> Vec<Report> {
         |i| (base.snapshot(), Selection::point(offsets[i])),
         |(t, s)| {
             let txn = Transaction::backspace(t, s).unwrap();
-            txn.apply(t, s).unwrap();
+            transaction_apply(&txn, t, s).unwrap();
         },
     ));
     let tab = NonZeroU8::new(4).unwrap();

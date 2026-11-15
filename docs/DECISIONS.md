@@ -373,3 +373,42 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
   a worker more than 1,024 edits behind must recompute.
 - **Reopen if:** Stage 9/10 measurements show background results falling
   out of the log, or the bounds become options (PLAN 2.11).
+
+## 016 — Traces: raw input events as JSON Lines
+
+- **Date:** 2026-11-15 (Stage 4; event level chosen by the owner)
+- **Decision:** a trace records *raw input* (key with modifiers, bracketed
+  paste, resize) in core-defined, terminal-independent types
+  (`flash_core::Event`); the temporary key map lives in the core editor
+  (`editor/keys.rs`, deleted in Stage 7). The file is JSON Lines via
+  serde_json: a header (`flash_trace` version, document source as a path or
+  fixture name, byte length, FNV-1a 64 content hash, screen size, starting
+  cursor), then one `{"t_ns", "event"}` per line. Replaying the events into
+  an editor started from the header (`trace::start`, which checks length,
+  hash, and cursor) reproduces the session exactly. Reading bounds every
+  line (default 16 MiB) before allocating past it, returns errors with
+  1-based line numbers, and stops at the first error. `flash` records with
+  `FLASH_TRACE=<file>` and replays with `flash --replay <trace>`.
+- **Why raw input (owner, option A):** traces then measure the whole input
+  path, including key resolution once Stage 7 adds keymaps, so the
+  standing latency benchmark does not under-measure. The cost is that a
+  trace means something different after keys are rebound.
+- **Why JSON Lines:** human-readable and diffable, appendable while
+  recording, and serde_json was already in the dependency tree (through
+  criterion). The header references the document instead of embedding it,
+  so a trace of a large or private file stays small and holds only what
+  was typed.
+- **Alternatives:** command-level events (stable across rebinding, but skip
+  key resolution); a hand-written line format (more parser code to fuzz);
+  bincode (not human-readable, a new dependency).
+- **Evidence:** `trace_tests.rs` (`round_trip` and
+  `replay_reproduces_session` properties, `read_rejects_malformed`,
+  `read_bounds_line_length`, `replay_rejects_bad_header`, `event_json_shape`);
+  `apps/flash/tests/cli.rs`. Removing the line bound or the hash check
+  each fails a test.
+- **Trade-off:** `t_ns` is recorded but not used by replay until Stage 6
+  replays coalescing; a recorded trace includes everything typed or
+  pasted, so it is as sensitive as the session.
+- **Reopen if:** Stage 7 needs traces that survive rebinding (add a
+  command-level event kind alongside), or trace parsing shows up in the
+  latency budget.

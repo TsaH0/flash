@@ -1,6 +1,6 @@
 //! Criterion benchmarks for multi-cursor transactions (PLAN Stage 3).
 //!
-//! Run: `cargo bench -p flash-core --bench transaction`
+//! Run: `cargo bench -p flash-core --features internals --bench transaction`
 //!
 //! Each iteration builds and applies one transaction on a fresh snapshot of
 //! the fixture and a copy of the selection: build, validate, apply, and the
@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use common::{Fixture, Layout, cursors};
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
+use flash_core::internals::transaction_apply;
 use flash_core::{ChangeSet, Text, Transaction};
 
 const CURSORS: [usize; 5] = [1, 10, 100, 1_000, 10_000];
@@ -34,7 +35,7 @@ fn bench_fixture(c: &mut Criterion, fx: &Fixture) {
                     setup,
                     |(mut t, mut s)| {
                         let txn = Transaction::insert(&t, &s, "x").unwrap();
-                        txn.apply(&mut t, &mut s).unwrap();
+                        transaction_apply(&txn, &mut t, &mut s).unwrap();
                         (t, s)
                     },
                     BatchSize::SmallInput,
@@ -45,7 +46,7 @@ fn bench_fixture(c: &mut Criterion, fx: &Fixture) {
                     setup,
                     |(mut t, mut s)| {
                         let txn = Transaction::backspace(&t, &s).unwrap();
-                        txn.apply(&mut t, &mut s).unwrap();
+                        transaction_apply(&txn, &mut t, &mut s).unwrap();
                         (t, s)
                     },
                     BatchSize::SmallInput,
@@ -56,7 +57,7 @@ fn bench_fixture(c: &mut Criterion, fx: &Fixture) {
                 b.iter_batched(
                     setup,
                     |(mut t, mut s)| {
-                        map.apply(&mut t, &mut s).unwrap();
+                        transaction_apply(&map, &mut t, &mut s).unwrap();
                         (t, s)
                     },
                     BatchSize::SmallInput,

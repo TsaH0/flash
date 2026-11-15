@@ -12,6 +12,7 @@ pub mod editor;
 pub mod motion;
 pub mod selection;
 pub mod text;
+pub mod trace;
 pub mod transaction;
 pub mod width;
 

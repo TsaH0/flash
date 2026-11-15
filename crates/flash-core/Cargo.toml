@@ -32,6 +32,7 @@ smallvec.workspace = true
 slotmap.workspace = true
 # Serialisable input events for trace record and replay (PLAN Stage 4).
 serde.workspace = true
+serde_json.workspace = true
 # Display columns for vertical motion and rendering.
 unicode-width.workspace = true
 arbitrary = { workspace = true, optional = true }
@@ -55,6 +56,7 @@ required-features = ["internals"]
 [[bench]]
 name = "transaction"
 harness = false
+required-features = ["internals"]
 
 [[bench]]
 name = "latency"
