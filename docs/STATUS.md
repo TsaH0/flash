@@ -2,7 +2,7 @@
 
 Updated: 2026-11-17. Stages 1–6 and 7a approved by the owner (6 and 7a
 on 2026-11-17). Stage 7 is gated three times (owner decision
-2026-11-17): 7a done, 7b in progress, 7c planned.
+2026-11-17): 7a done, 7b done, 7c next.
 
 ## Completed and tested
 
@@ -85,17 +85,14 @@ on 2026-11-17). Stage 7 is gated three times (owner decision
   regex selection commands over the rope (`crate::search`). No key is
   hard-coded (DECISIONS 026–032).
 
-- **Stage 7b carried fixes** (2026-11-17, uncommitted, DECISIONS
-  033–039): regex search across chunk boundaries; undo groups bounded by
-  size (`undo-group-max-bytes`); hooks queue only wanted kinds; kitty
-  keyboard flag (`kitty-keyboard`); event time at read; saves and opens
-  on an I/O thread, with quit waiting for a running save; idle-mode
-  benches and bytes per frame. Full gate passes (fmt, clippy with and without all
-  features, workspace tests, small-chunk tests, 4,096-case property
-  tests in both leaf sizes). Interactive pty latency unchanged from 7a
-  (p50 267–281 µs, p99 531–585 µs, three runs,
-  `bench/results/stage-7b-interactive.jsonl`); the input-thread hand-off
-  is still 82–103 µs of it (Stage 7c experiment).
+- **Stage 7b** (2026-11-17, [stage-7b.md](stages/stage-7b.md), DECISIONS
+  033–043): carried fixes (search across chunk boundaries, undo groups
+  bounded by size, hook kinds, kitty keyboard flag, read-time events,
+  saves and opens on an I/O thread, idle-mode benches and frame bytes);
+  the display-line layout cache (`flash_core::layout`, replacing the
+  line anchor); soft wrap (`soft-wrap`, `g j`/`g k`); incremental search
+  (`/ ? n N *`, `:noh`), replace (`:s`, `:%s`), large documents searched
+  on a thread.
 
 ## Implemented but not fully verified
 
@@ -117,17 +114,14 @@ on 2026-11-17). Stage 7 is gated three times (owner decision
 
 ## In progress
 
-- Stage 7b: carried fixes done (uncommitted, on branch `stage-7`);
-  next is the display-line layout cache, then search and replace and
-  soft wrap. Stage 7a still awaits the owner's approval.
+- Stage 7b complete on branch `stage-7`, awaiting the owner's approval;
+  Stage 7c next (the owner asked for both to be completed).
 
 ## Planned
 
-- Stage 7b (carried fixes, display-line layout cache, search and replace,
-  soft wrap) and 7c (renderer judged on bytes per frame, compositing
-  grid, themes, slow output, the input-thread experiment); Stages 8–11
-  as in [PLAN.md](PLAN.md). PLAN is at revision 3 (2026-11-17): see its
-  Appendix B.
+- Stage 7c (cell grid with views and overlays, renderer judged on bytes
+  and cells per frame, themes, slow output, the input-thread
+  experiment); Stages 8–11 as in [PLAN.md](PLAN.md).
 
 ## Deferred
 
@@ -135,6 +129,6 @@ on 2026-11-17). Stage 7 is gated three times (owner decision
   Stage 10 (LSP).
 - History cap: none until measurements or the Stage 7 option registry
   ask for one (DECISIONS 019).
-- Up/down motion and Home/End on huge single-line files are O(line
-  length) (about 26 ms on 1 MB); revisit with a Stage 7 per-line layout
-  cache.
+- A jump along a huge single line (End after an edit split or shortened
+  it) walks from the layout's last mark: O(distance), about 26 ms on
+  1 MB (DECISIONS 040). Up/down on long lines use the layout's marks.

@@ -1069,12 +1069,7 @@ impl Editor {
             }
             // Visible long lines get marks up to the left column, so a
             // renderer starts drawing them near it.
-            if v.left > 0 {
-                let last = (v.top + height).min(text.line_count());
-                for line in v.top..last {
-                    v.layout.extend_to_column(text, line, v.left);
-                }
-            }
+            v.layout.extend_visible(text, v.top, height, v.left);
         }
         v.cursor = Some(loc);
         (v.top, v.top_row, v.left) != (old_top, old_row, old_left)

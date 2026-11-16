@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 896f354a5114730c61cfb64a758b2bf23839620f86d92aba59acb519a426b6f6 # shrinks to s = "", tab = 1, wrap = None, ops = [Edit(Index(0), Index(0), "👨\u{200d}👩\u{200d}👧"), Vertical(Index(0), 1, false, Some(2))]
+cc e33733b2c3342dd9974a389483a39080610a24f778435bdef5d50842f8c2b152 # shrinks to s = "\ra\na老虎\n🇯\téa", tab = 1, wrap = None, ops = [Configure(3, None), Locate(Index(14757395258967641293)), Locate(Index(13835058055282163712))]

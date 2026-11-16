@@ -206,6 +206,56 @@ fn an_insert_joining_clusters_at_a_mark_drops_it() {
     );
 }
 
+/// A point at the text's end (a mark or the last location) must not
+/// survive an appended combining mark that joins it to the last cluster.
+#[test]
+fn appending_a_combining_mark_at_the_end_drops_points_there() {
+    for wrap in [None, Some(7)] {
+        let line = "abcdef".repeat(10);
+        let mut doc = Document::new(Text::from(line.as_str()), None);
+        let view = SlotMap::<ViewId, ()>::with_key().insert(());
+        doc.add_view(view);
+        let c = config(4, wrap);
+        let mut layout = Layout::new(c);
+        let end = doc.text().byte_len();
+        layout.locate(doc.text(), end).unwrap();
+        let cs = ChangeSet::from_edits(end, [(end..end, "\u{301}")]).unwrap();
+        doc.commit(view, Transaction::new(cs, None)).unwrap();
+        layout.sync(&doc);
+        for o in [end, end + 2] {
+            assert_eq!(
+                layout.locate(doc.text(), o).unwrap(),
+                locate_from_start(doc.text(), o, c),
+                "offset {o}, wrap {wrap:?}"
+            );
+        }
+    }
+}
+
+/// The empty row after a full last row stays right when an insert between
+/// `\r` and `\n` moves the line's end (the row before is full either way).
+#[test]
+fn an_insert_inside_a_crlf_drops_the_row_after_a_full_line() {
+    let text = format!("{}\r\nzz", "a".repeat(16));
+    let mut doc = Document::new(Text::from(text.as_str()), None);
+    let view = SlotMap::<ViewId, ()>::with_key().insert(());
+    doc.add_view(view);
+    let c = config(4, Some(4));
+    let mut layout = Layout::new(c);
+    // 16 cells in rows of 4: an empty fifth row at the line end.
+    assert_eq!(layout.locate(doc.text(), 16).unwrap().row, 4);
+    let cs = ChangeSet::from_edits(doc.text().byte_len(), [(17..17, "X")]).unwrap();
+    doc.commit(view, Transaction::new(cs, None)).unwrap();
+    layout.sync(&doc);
+    for o in [16, 17, 18] {
+        assert_eq!(
+            layout.locate(doc.text(), o).unwrap(),
+            locate_from_start(doc.text(), o, c),
+            "offset {o}"
+        );
+    }
+}
+
 #[derive(Debug, Clone)]
 enum Op {
     Edit(prop::sample::Index, prop::sample::Index, String),
@@ -214,6 +264,7 @@ enum Op {
     Rows(prop::sample::Index, usize),
     StartBefore(prop::sample::Index, usize),
     ExtendTo(prop::sample::Index, usize),
+    ExtendVisible(prop::sample::Index, usize, usize),
     Vertical(prop::sample::Index, usize, bool, Option<usize>),
     RowMotion(prop::sample::Index, usize, bool, Option<usize>),
     Configure(u8, Option<usize>),
@@ -229,6 +280,7 @@ fn op() -> impl Strategy<Value = Op> {
         2 => (ix(), 0..6usize).prop_map(|(l, r)| Op::Rows(l, r)),
         1 => (ix(), 0..60usize).prop_map(|(l, c)| Op::StartBefore(l, c)),
         1 => (ix(), 0..80usize).prop_map(|(l, c)| Op::ExtendTo(l, c)),
+        1 => (ix(), 1..6usize, 0..80usize).prop_map(|(l, h, c)| Op::ExtendVisible(l, h, c)),
         2 => (ix(), 1..4usize, any::<bool>(), prop::option::of(0..80usize))
             .prop_map(|(o, n, down, goal)| Op::Vertical(o, n, down, goal)),
         2 => (ix(), 1..4usize, any::<bool>(), prop::option::of(0..20usize))
@@ -323,6 +375,9 @@ proptest! {
                     if let Some((head, _)) = cached {
                         prop_assert!(text.is_grapheme_boundary(head));
                     }
+                }
+                Op::ExtendVisible(i, height, left) => {
+                    layout.extend_visible(&text, i.index(lines), height, left);
                 }
                 Op::ExtendTo(i, left) => {
                     layout.extend_to_column(&text, i.index(lines), left);

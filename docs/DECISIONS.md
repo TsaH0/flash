@@ -612,6 +612,8 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
   The head's column no longer walks the line: see 025.
 - **Reopen if:** Stage 7's renderer work (dirty lines, per-line layout
   cache) replaces it.
+- **Superseded in part by 040:** the line anchor is gone; the layout
+  cache's marks give where a line's visible part starts.
 
 ## 024 — Main loop: threads, one channel, 8 ms drain, signals
 
@@ -674,6 +676,9 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
   Stage 5 on `small` and `medium` (stage report F).
 - **Reopen if:** a per-line layout cache (Stage 7 or soft wrap) can
   answer columns directly.
+- **Superseded by 040** (Stage 7b): `editor/column.rs` is deleted; the
+  layout cache's marks answer the same questions for every line, with
+  the same revision-log validity rule.
 
 
 ## 026 — Stage 7 is gated three times
@@ -966,3 +971,124 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
   Every frame is a full redraw, so a one-character edit writes about a
   screen's worth of escapes and text; Stage 7c's renderer is judged
   against these sizes.
+
+## 040 — A display-line layout cache replaces the line anchor
+
+- **Date:** 2026-11-17 (Stage 7b; PLAN rev. 3 Stage 7b item 2; supersedes
+  023's anchor and 025)
+- **Decision:** `flash_core::layout::Layout`, one per view, answers where
+  an offset is (logical column, wrapped row, row start), how many rows a
+  line has, and where to start drawing a line or row. Lines of 2 KiB or
+  more keep *marks* at least 512 bytes apart (row starts when wrapping,
+  grapheme boundaries otherwise): offset, logical column, row, and `dep`,
+  how far the layout read to place the mark (a row start depends on the
+  grapheme that did not fit; a column only on the text before it). On a
+  new revision a mark is kept only if `RevisionLog::map_untouched` shows
+  its line untouched from the line start to `dep`, and is shifted with
+  the line; the kept marks are a prefix (the property is monotone in
+  `dep`, so a binary search finds it), and the last kept one is dropped
+  if an edit right at it made it a non-boundary. Marks are extended
+  lazily, as far as a query needs; a walk to the left column leaves a
+  mark where it stopped (at least 16 bytes on). The last location found
+  (the *hot point*, on any line) is kept by the same rule and is where
+  the next query walks from, forward or backward over non-tab graphemes.
+  At most 128 long lines are cached (LRU). Vertical motion takes
+  optional column hints (`motion::Columns`) the layout provides.
+- **Why:** soft wrap needs row starts for every visible line, and the
+  Stage 6 checkpoints answered one question (the primary head's column)
+  for one line. Marks generalise them: one mechanism for columns, rows,
+  and the left edge, kept valid by the same revision-log rule.
+- **Evidence:** `layout/tests.rs`: a property test against laying each
+  line out from its start under random edits, tab widths, and wrap widths
+  (locate, row counts, rows, the left-edge start, column extension,
+  hinted against plain vertical motion, row motion cached against fresh);
+  mutations that keep one extra mark or read one grapheme less are
+  caught; `an_insert_joining_clusters_at_a_mark_drops_it` and
+  `appending_a_combining_mark_at_the_end_drops_points_there` pin the
+  boundary re-check (random edits did not find it in 2,000 cases);
+  `queries_on_a_long_line_walk_near_the_offset`;
+  `local_edits_on_a_long_line_do_not_walk_it`; the random editor test
+  checks the cursor's location and visibility (soft wrap in half the
+  runs); the random render test compares frames with and without the
+  cache. The hinted-motion property found two bugs in the wiring before
+  commit (the scan restarted at the line start; a swapped tuple). The
+  latency bench found the first version 10–13× slower per key on the
+  1 MB single line (walks of up to 1 KiB from a mark on every key) and
+  slower on short lines (walked from their start): the hot point,
+  prefix-only dependencies, stop marks, and skipping short visible lines
+  by scanning for their newline brought it back (stage-7b.md F, G).
+- **Trade-off:** a jump along a long line (End on a line just split, a
+  search result) walks from the last mark: O(distance), about 26 ms on
+  the 1 MB `one-line` fixture, as before. Marks after an edit are
+  dropped, not shifted (shifting is valid only across tab-free text,
+  which would need a per-mark flag).
+- **Reopen if:** jumps along long lines matter (shift marks across
+  tab-free text), or Stage 9 highlighting wants per-line layout caching.
+
+## 041 — Soft wrap: greedy rows, logical vertical motion, g j / g k
+
+- **Date:** 2026-11-17 (Stage 7b)
+- **Decision:** the `soft-wrap` option (default off). A row holds at most
+  the view's width; it ends after its last space or tab when the next
+  grapheme does not fit, else before that grapheme; a grapheme wider
+  than the row gets one of its own; the cursor cell after a line's last
+  grapheme counts, so a full last row is followed by an empty row. Tabs
+  expand on the logical column. The view scrolls by rows (`top_row`);
+  there is no horizontal scroll. `j`/`k` and the arrows move by logical
+  lines (as vim); `row-up`/`row-down` (`g k`/`g j`) move by rows with a
+  goal column within the row, and are exactly up/down without wrapping.
+- **Alternatives:** Unicode line breaking (UAX #14; a new dependency and
+  lookahead past one row), wrap at graphemes only (breaks words), moving
+  by rows on `j`/`k` (surprising with counts and in macros).
+- **Evidence:** `rows_break_after_spaces_else_at_graphemes`,
+  `row_motion_moves_by_wrapped_rows`, the emulator tests
+  `soft_wrap_draws_rows_and_the_cursor_on_its_row` and
+  `soft_wrap_scrolls_by_rows_inside_a_long_line`, the random tests.
+- **Reopen if:** users want UAX #14 breaking or indented continuation
+  rows.
+
+## 042 — Search: incremental, off the main thread for large documents
+
+- **Date:** 2026-11-17 (Stage 7b)
+- **Decision:** `/` and `?` search as the pattern is typed, from where the
+  search started, wrapping around; Enter keeps the match and pattern,
+  Esc restores both. `n`/`N` repeat (in extend mode adding the match as a
+  new selection), `*` searches for the selected text (escaped), `:noh`
+  stops the underlining. Forward searches start after the primary
+  selection (a match at the cursor is skipped, as in vim), backward ones
+  before its start. The regex sees the whole text from any start (a
+  cursor over rope chunks via `chunk_at_byte`). Documents of 256 KiB or
+  more are searched by `Request::Search` (a snapshot, the revision, the
+  pattern) on a search thread with a one-job latest-wins slot; only the
+  latest search's result is applied, mapped forward through the revision
+  log if the text changed, else dropped with a message. A replay runs
+  searches inline.
+- **Why:** PLAN Stage 7 (search off the main thread for large buffers,
+  without blocking input); requests keep the core free of threads and
+  replays exact (DECISIONS 020).
+- **Evidence:** `search.rs` (against regex-automata on the whole string,
+  also with tiny leaves), `editor/find/tests.rs` (including stale and
+  superseded results; removing the id check or the mapping fails it),
+  `searcher.rs`, pty `searching_a_large_file_finds_the_match` (1 MB).
+- **Trade-off:** a search that has started cannot be cancelled
+  (regex-cursor has none); its result is ignored if superseded. A
+  backward search scans from the start of the text. Matches are
+  underlined only within what each drawn line or row shows (at most
+  4 KiB from where drawing starts): a match crossing a wrapped row break
+  is not underlined (Stage 7c draws per line).
+
+## 043 — Replace is `:s` and `:%s` over selections or the text
+
+- **Date:** 2026-11-17 (Stage 7b)
+- **Decision:** `:s/pattern/replacement/` replaces every match inside the
+  selections, `:%s/…/…/` inside the whole text; the first character is
+  the delimiter (a backslash escapes it), flag `i` ignores case (`g` is
+  accepted and implied), `$1`/`${name}`/`$$` expand from captures read
+  from the rope. One transaction, one undo step. Selection-first editing
+  still has its own way: select matches (`s`), then change (`c`).
+- **Why:** PLAN Stage 7 asks for replace; `:s` is what users of modal
+  editors type, and doing it as one change set keeps undo whole.
+- **Evidence:** `replace_in_selections_and_in_the_whole_text`,
+  `substitution_specs_parse`, `replacements_expand_captures`.
+- **Trade-off:** replacing runs on the main thread (a one-off command;
+  `:%s` over 100 MB blocks while it runs).

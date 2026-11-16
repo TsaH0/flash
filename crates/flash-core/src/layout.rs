@@ -46,7 +46,11 @@ use crate::width::grapheme_width;
 pub(crate) const LONG: usize = if cfg!(test) { 16 } else { 2048 };
 
 /// The least distance in bytes between marks.
-pub(crate) const SPACING: usize = if cfg!(test) { 6 } else { 1024 };
+pub(crate) const SPACING: usize = if cfg!(test) { 6 } else { 512 };
+
+/// The least distance in bytes of a mark left where a walk to a column
+/// stopped (so the next walk to about that column is short).
+const STOP_SPACING: usize = if cfg!(test) { 3 } else { 16 };
 
 /// Long lines with marks, at most. The least recently used is evicted.
 /// Enough for every visible line of a large terminal.
@@ -136,6 +140,27 @@ pub struct Layout {
     /// The marks of a short line (its start alone), reused so queries
     /// allocate nothing.
     scratch: Vec<Mark>,
+    /// The last location found, as a starting point for the next query
+    /// (kept across edits by the marks' rule).
+    hot: Option<Hot>,
+}
+
+/// The last location [`Layout::locate`] found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Hot {
+    line_start: usize,
+    offset: usize,
+    column: usize,
+    /// Whether `offset` is a grapheme boundary (else not a walk origin).
+    boundary: bool,
+    /// Its row's start, logical column, index, and what placing it read.
+    row_start: usize,
+    row_column: usize,
+    row: usize,
+    row_dep: usize,
+    /// What the whole point depends on (the character after `offset`
+    /// included).
+    dep: usize,
 }
 
 impl Layout {
@@ -146,6 +171,7 @@ impl Layout {
             lines: Vec::new(),
             clock: 0,
             scratch: Vec::new(),
+            hot: None,
         }
     }
 
@@ -163,6 +189,7 @@ impl Layout {
         if config != self.config {
             self.config = config;
             self.lines.clear();
+            self.hot = None;
         }
     }
 
@@ -175,6 +202,22 @@ impl Layout {
             return;
         }
         self.revision = to;
+        let text = doc.text();
+        self.hot = self.hot.and_then(|h| {
+            let (start, _) = doc.log().map_untouched(from, to, h.line_start, h.dep)?;
+            let shift = |o: usize| o - h.line_start + start;
+            let offset = shift(h.offset);
+            Some(Hot {
+                line_start: start,
+                offset,
+                // An insert right at it may have joined it to a cluster.
+                boundary: h.boundary && text.is_grapheme_boundary(offset),
+                row_start: shift(h.row_start),
+                row_dep: shift(h.row_dep),
+                dep: shift(h.dep),
+                ..h
+            })
+        });
         self.lines.retain_mut(|l| {
             let untouched = |m: &Mark| doc.log().map_untouched(from, to, l.start, m.dep);
             // Untouched is monotone in `dep` (a longer prefix fails if a
@@ -193,6 +236,13 @@ impl Layout {
                 m.dep = m.dep - old + start;
             }
             l.start = start;
+            // A mark depends on the text before it; whether it is still a
+            // grapheme boundary also on the character at it, which only an
+            // edit right at the last kept mark can have changed.
+            while l.marks.len() > 1 && !text.is_grapheme_boundary(l.marks[l.marks.len() - 1].offset)
+            {
+                l.marks.pop();
+            }
             true
         });
         // Anything else in the text may have changed length: nothing to do,
@@ -213,44 +263,62 @@ impl Layout {
         let range = text.line_range(line).ok()?;
         let config = self.config;
         let (start, end) = (range.start, range.end);
+        // The last location on this line, if any: usually next to this
+        // one (typing, moving by a grapheme).
+        let hot = self.hot.filter(|h| h.line_start == start);
         let marks = self.marks_mut(start, end);
-        let (row_start, row_column, row) = match config.wrap {
+        let (row_start, row_column, row, row_dep, column) = match config.wrap {
             Some(width) => {
                 let i = marks.partition_point(|m| m.offset <= offset) - 1;
                 let m = marks[i];
-                let (mut s, mut c, mut row) = (m.offset, m.column, m.row);
+                let (mut s, mut c, mut row, mut dep) = (m.offset, m.column, m.row, m.dep);
+                if let Some(h) = hot.filter(|h| h.row_start > s && h.row_start <= offset) {
+                    (s, c, row, dep) = (h.row_start, h.row_column, h.row, h.row_dep);
+                }
                 loop {
                     let r = lay_row(text, end, s, c, config.tab_width, width.get())?;
                     if r.last || offset < r.end {
                         break;
                     }
-                    extend(marks, r.end, r.end_col, row + 1, r.read, text.byte_len());
-                    (s, c, row) = (r.end, r.end_col, row + 1);
+                    extend(marks, r.end, r.end_col, row + 1, r.read);
+                    (s, c, row, dep) = (r.end, r.end_col, row + 1, r.read);
                 }
-                (s, c, row)
+                let column = walk(text, (s, c), offset, config.tab_width, None)?;
+                (s, c, row, dep, column)
             }
-            None => (start, 0, 0),
-        };
-        let column = match config.wrap {
-            Some(_) => walk(
-                text,
-                (row_start, row_column),
-                offset,
-                config.tab_width,
-                None,
-            )?,
             None => {
                 let i = marks.partition_point(|m| m.offset <= offset) - 1;
                 let m = marks[i];
-                walk(
-                    text,
-                    (m.offset, m.column),
-                    offset,
-                    config.tab_width,
-                    Some(marks),
-                )?
+                let mut from = (m.offset, m.column);
+                let mut back = None;
+                if let Some(h) = hot.filter(|h| h.boundary) {
+                    if h.offset <= offset && h.offset > from.0 {
+                        from = (h.offset, h.column);
+                    } else if h.offset > offset && h.offset - offset < offset - from.0 {
+                        back = walk_back(text, (h.offset, h.column), offset);
+                    }
+                }
+                let column = match back {
+                    Some(column) => column,
+                    None => walk(text, from, offset, config.tab_width, Some(marks))?,
+                };
+                (start, 0, 0, start, column)
             }
         };
+        let boundary = text.is_grapheme_boundary(offset);
+        self.hot = Some(Hot {
+            line_start: start,
+            offset,
+            column,
+            boundary,
+            row_start,
+            row_column,
+            row,
+            row_dep,
+            // The text before it; its boundary status is checked again on
+            // every sync.
+            dep: row_dep.max(offset),
+        });
         Some(Location {
             offset,
             line,
@@ -283,7 +351,7 @@ impl Layout {
                     last: r.last,
                 });
             }
-            extend(marks, r.end, r.end_col, index + 1, r.read, text.byte_len());
+            extend(marks, r.end, r.end_col, index + 1, r.read);
             (s, c, index) = (r.end, r.end_col, index + 1);
         }
     }
@@ -304,7 +372,7 @@ impl Layout {
             if r.last {
                 return Some(row + 1);
             }
-            extend(marks, r.end, r.end_col, row + 1, r.read, text.byte_len());
+            extend(marks, r.end, r.end_col, row + 1, r.read);
             (s, c, row) = (r.end, r.end_col, row + 1);
         }
     }
@@ -329,7 +397,6 @@ impl Layout {
             return;
         }
         let (mut pos, mut column) = (last.offset, last.column);
-        let len = text.byte_len();
         let Ok(graphemes) = text.graphemes(pos, Direction::Forward) else {
             return;
         };
@@ -340,7 +407,48 @@ impl Layout {
             walked();
             column += grapheme_width(&g, column, tab);
             pos += g.len();
-            extend(marks, pos, column, 0, pos, len);
+            extend(marks, pos, column, 0, pos);
+        }
+        // A mark where the walk stopped, so the next walk to about this
+        // column (scrolled by a few columns) starts near it.
+        if column >= left && pos >= marks[marks.len() - 1].offset + STOP_SPACING {
+            marks.push(Mark {
+                offset: pos,
+                column,
+                row: 0,
+                dep: pos,
+            });
+        }
+    }
+
+    /// Without wrapping: [`extend_to_column`](Self::extend_to_column) for
+    /// the long lines among `height` lines from `top`. Short lines are
+    /// skipped by scanning their bytes for the newline (at most [`LONG`]
+    /// each), not by an O(log n) line lookup.
+    pub(crate) fn extend_visible(&mut self, text: &Text, top: usize, height: usize, left: usize) {
+        if self.config.wrap.is_some() || left == 0 {
+            return;
+        }
+        let Ok(mut pos) = text.line_start(top) else {
+            return;
+        };
+        let len = text.byte_len();
+        for line in top..top.saturating_add(height) {
+            // A line already cached is long: no scan.
+            let cached = self.lines.iter().any(|l| l.start == pos);
+            match (!cached).then(|| newline_within(text, pos, LONG)).flatten() {
+                Some(nl) => pos = nl + 1,
+                None => {
+                    self.extend_to_column(text, line, left);
+                    match text.line_start(line + 1) {
+                        Ok(next) => pos = next,
+                        Err(_) => return,
+                    }
+                }
+            }
+            if pos > len {
+                return;
+            }
         }
     }
 
@@ -515,25 +623,32 @@ impl crate::motion::Columns for Layout {
     }
 }
 
+/// The first `\n` at or after `pos` and before `pos + limit`, if any.
+fn newline_within(text: &Text, mut pos: usize, limit: usize) -> Option<usize> {
+    let stop = pos.saturating_add(limit);
+    while pos < stop {
+        let (chunk, start) = text.chunk_containing(pos)?;
+        let bytes = &chunk.as_bytes()[pos - start..];
+        let n = bytes.len().min(stop - pos);
+        if let Some(i) = bytes[..n].iter().position(|&b| b == b'\n') {
+            return Some(pos + i);
+        }
+        pos += n;
+    }
+    None
+}
+
 /// Appends a mark at `offset` if it extends the marks by at least
 /// [`SPACING`] bytes (`marks` has one entry at least).
-fn extend(
-    marks: &mut Vec<Mark>,
-    offset: usize,
-    column: usize,
-    row: usize,
-    read: usize,
-    len: usize,
-) {
+fn extend(marks: &mut Vec<Mark>, offset: usize, column: usize, row: usize, read: usize) {
     let last = marks[marks.len() - 1].offset;
     if offset >= last + SPACING {
         marks.push(Mark {
             offset,
             column,
             row,
-            // Also the character right after: whether `offset` is still a
-            // grapheme boundary depends on it.
-            dep: read.max((offset + 4).min(len)),
+            // Whether it is still a grapheme boundary is checked on sync.
+            dep: read,
         });
     }
 }
@@ -552,7 +667,6 @@ fn walk(
     if pos == to {
         return Some(column);
     }
-    let len = text.byte_len();
     for g in text.graphemes(pos, Direction::Forward).ok()? {
         if pos + g.len() > to {
             break;
@@ -561,8 +675,27 @@ fn walk(
         column += grapheme_width(&g, column, tab);
         pos += g.len();
         if let Some(marks) = marks.as_deref_mut() {
-            extend(marks, pos, column, 0, pos, len);
+            extend(marks, pos, column, 0, pos);
         }
+    }
+    Some(column)
+}
+
+/// The logical column of `to`, walking back from `from` (a grapheme
+/// boundary after `to` on its line, at that column). `None` if a tab lies
+/// between (its width depends on where it starts). If `to` is inside a
+/// cluster, the cluster is not counted, as walking forward does.
+fn walk_back(text: &Text, from: (usize, usize), to: usize) -> Option<usize> {
+    let (mut pos, mut column) = from;
+    let mut graphemes = text.graphemes(pos, Direction::Backward).ok()?;
+    while pos > to {
+        let g = graphemes.next()?;
+        if g == "\t" {
+            return None;
+        }
+        walked();
+        column = column.checked_sub(grapheme_width(&g, 0, NonZeroU8::MIN))?;
+        pos -= g.len();
     }
     Some(column)
 }
@@ -617,7 +750,8 @@ fn lay_row(
         return Some(RowEnd {
             end: pos,
             end_col: col,
-            // Whether the line ends here: its terminator (or the text end).
+            // The character at the line end: any grapheme there would
+            // overflow the full row too, so only an edit at it matters.
             read: pos + 1,
             last: false,
         });
