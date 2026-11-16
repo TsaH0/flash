@@ -1,6 +1,7 @@
 # Stage 4 — Documents, views, revisions, headless editor, trace replay
 
-Status: **complete, awaiting owner approval.** Branch `stage-4`, local
+Status: **complete; approved by the owner 2026-11-16** (no independent
+review was run). Branch `stage-4`, local
 commits only (nothing pushed). Design:
 [2026-11-15-stage-4-design.md](../superpowers/specs/2026-11-15-stage-4-design.md)
 (approved 2026-11-15). Plan:

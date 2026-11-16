@@ -1,7 +1,7 @@
 # Flash status
 
-Updated: 2026-11-16, end of Stage 5 (Stages 4 and 5 awaiting owner
-approval).
+Updated: 2026-11-16, Stage 6 in progress (Stages 4 and 5 approved by the
+owner 2026-11-16).
 
 ## Completed and tested
 
@@ -62,26 +62,20 @@ approval).
 - Stage 3 had no independent fresh-context review; the owner approved it
   without one (2026-11-15). The implementer's adversarial pass is in
   [stage-3.md](stages/stage-3.md) section G.
-- Stage 4 has no independent fresh-context review (owner rule: no
-  delegation without a request); the implementer's review is in
-  [stage-4.md](stages/stage-4.md) section G.
-- Stage 5 has no independent fresh-context review either; the
-  implementer's review is in [stage-5.md](stages/stage-5.md) section G.
-  Its design was not separately approved (owner: "complete the next
-  stage as well"); the implementer's calls are listed there.
+- Stages 4 and 5 have no independent fresh-context review; the owner
+  approved both without one (2026-11-16). The implementer's reviews are
+  in [stage-4.md](stages/stage-4.md) and [stage-5.md](stages/stage-5.md)
+  section G.
 - `FLASH_TRACE` recording in a real terminal has no automated test (needs
   a TTY); the format and `--replay` are tested.
 
 ## In progress
 
-- Nothing. Stage 5 ([stage-5.md](stages/stage-5.md), branch `stage-5`)
-  and Stage 4 ([stage-4.md](stages/stage-4.md), branch `stage-4`) are
-  waiting for review and approval.
+- Stage 6: minimal usable terminal editor (branch `stage-6`; design
+  [2026-11-16-stage-6-design.md](superpowers/specs/2026-11-16-stage-6-design.md)).
 
 ## Planned
 
-- Stage 6: minimal usable terminal editor (next, after approval); must
-  resolve Ctrl+Z (undo here, suspend in PLAN Stage 6).
 - Stages 7–11 as in [PLAN.md](PLAN.md).
 
 ## Deferred

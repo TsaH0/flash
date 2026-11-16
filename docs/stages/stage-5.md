@@ -1,8 +1,8 @@
 # Stage 5 — Undo, redo, branching history
 
-Status: **complete, awaiting owner approval.** Branch `stage-5` (on top of
-`stage-4`, which is itself still awaiting approval), local commits only
-(nothing pushed). Design:
+Status: **complete; approved by the owner 2026-11-16** (no independent
+review was run). Branch `stage-5` (on top of `stage-4`), local commits
+only (nothing pushed). Design:
 [2026-11-16-stage-5-design.md](../superpowers/specs/2026-11-16-stage-5-design.md).
 Plan: [2026-11-16-stage-5-history.md](../superpowers/plans/2026-11-16-stage-5-history.md).
 
