@@ -19,6 +19,9 @@ pub(crate) const PIECES: &[&str] = &[
     "\u{1F1FA}\u{1F1F8}",
     "\u{7}",
     "\u{1b}[31m",
+    // Zero-width: a bidi override and a zero-width space.
+    "\u{202E}",
+    "\u{200B}",
 ];
 
 /// A small deterministic xorshift generator: `next(n)` is in `0..n`.
@@ -115,7 +118,7 @@ fn check(ed: &Editor, after: &Event) {
         let sel = doc.selection(id).unwrap();
         assert_eq!(sel.validate(doc.text()), Ok(()), "after {after:?}");
         assert_normalised(sel).unwrap();
-        let head = sel.primary().head();
+        let head = ed.cursor_position(id).unwrap();
         let current = view
             .anchor()
             .filter(|a| a.revision == doc.revision() && a.head == head && a.tab_width == tab);
@@ -147,9 +150,10 @@ fn check(ed: &Editor, after: &Event) {
     }
     if let Some(focus) = ed.focus() {
         let (view, doc) = ed.view_document(focus).unwrap();
+        // The cursor (the block in normal mode) is what scrolling shows.
         let line = doc
             .text()
-            .line_of_offset(doc.selection(focus).unwrap().primary().head())
+            .line_of_offset(ed.cursor_position(focus).unwrap())
             .unwrap();
         let height = usize::from(view.size().1);
         if height > 0 {

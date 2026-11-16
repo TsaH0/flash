@@ -959,7 +959,8 @@ impl Editor {
         let Some(doc) = self.documents.get(v.doc) else {
             return false;
         };
-        let Some(head) = doc.selection(view).map(|s| s.primary().head()) else {
+        // The primary cursor: the block's grapheme in normal mode.
+        let Some(head) = self.cursor_position(view) else {
             return false;
         };
         let Some(column::Located {

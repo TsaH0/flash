@@ -391,6 +391,21 @@ impl Editor {
             .is_some_and(|v| self.modes.flags(v.mode).min_grapheme && v.options.normal_min_grapheme)
     }
 
+    /// Where `view`'s primary cursor is drawn: the start of the cursor
+    /// grapheme with a block cursor, else the head. Scrolling keeps it
+    /// visible and the view's [`LineAnchor`](super::LineAnchor) describes
+    /// it.
+    pub fn cursor_position(&self, view: ViewId) -> Option<usize> {
+        let v = self.views.get(view)?;
+        let doc = self.documents.get(v.doc)?;
+        let r = *doc.selection(view)?.primary();
+        if self.block_cursor(view) {
+            cursor_grapheme(doc.text(), r).ok()
+        } else {
+            Some(r.head())
+        }
+    }
+
     /// Replaces each range with a point at its cursor: the cursor
     /// grapheme's start with a block cursor, else the head.
     pub(crate) fn collapse_to_cursors(&mut self, view: ViewId) -> Effects {

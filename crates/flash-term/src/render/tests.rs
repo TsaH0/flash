@@ -144,10 +144,14 @@ fn plain(code: KeyCode) -> Event {
     Event::Key(KeyEvent::plain(code))
 }
 
+/// An editor showing `s`, in insert mode with a cursor at 0: these cases
+/// draw the Stage 6 point cursor (normal mode's block has its own test).
 fn editor_with(s: &str, width: u16, height: u16) -> Editor {
     let mut ed = Editor::new(width, height);
     let doc = ed.open(Text::from(s), None);
-    ed.open_view(doc).unwrap();
+    let view = ed.open_view(doc).unwrap();
+    ed.set_mode(view, flash_core::ModeId::INSERT);
+    ed.set_selection(view, Selection::point(0)).unwrap();
     ed
 }
 
@@ -182,6 +186,8 @@ fn status_shows_path_modified_cursors_and_message() {
     let mut ed = Editor::new(60, 3);
     let doc = ed.open(Text::from("ab"), Some(PathBuf::from("dir/a.txt")));
     let view = ed.open_view(doc).unwrap();
+    ed.set_mode(view, flash_core::ModeId::INSERT);
+    ed.set_selection(view, Selection::point(0)).unwrap();
     ed.handle(&plain(KeyCode::Char('x')));
     ed.set_selection(
         view,

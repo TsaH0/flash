@@ -629,3 +629,18 @@ fn checkpoints_on_another_line_are_ignored() {
     assert!(rear >= 21, "rear {rear} is on line 0");
     assert_eq!(at, rear - 21);
 }
+
+/// A reused left-edge checkpoint already at the new left column still
+/// takes in the zero-width graphemes before it, as walking from the line
+/// start does (found by the renderer's random test after Stage 7a).
+#[test]
+fn a_start_reused_at_the_left_column_takes_in_zero_width_graphemes() {
+    use super::column::{line_start_at, line_start_from};
+    let tab = NonZeroU8::new(4).unwrap();
+    // x, two zero-width spaces, then y z: the spaces sit at column 1.
+    let t = Text::from("x\u{200b}\u{200b}yz");
+    assert_eq!(line_start_at(&t, 9, 3, 1), Some((1, 1)));
+    assert_eq!(line_start_from(&t, (7, 1), 9, 1, tab), Some((1, 1)));
+    assert_eq!(line_start_from(&t, (0, 0), 9, 1, tab), Some((1, 1)));
+    assert_eq!(line_start_from(&t, (7, 1), 9, 2, tab), Some((8, 2)));
+}

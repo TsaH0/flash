@@ -72,9 +72,9 @@ fn frame(out: &mut Vec<u8>, editor: &Editor, latency_ns: u64, anchors: bool) -> 
     queue!(out, BeginSynchronizedUpdate, Hide)?;
     let focused = editor.focus().and_then(|focus| {
         let (view, doc) = editor.view_document(focus)?;
-        Some((view, doc, doc.selection(focus)?))
+        Some((focus, view, doc, doc.selection(focus)?))
     });
-    let Some((view, doc, selection)) = focused else {
+    let Some((focus, view, doc, selection)) = focused else {
         queue!(out, Clear(ClearType::All))?;
         if let Some(prompt) = editor.prompt() {
             bottom_line(out, prompt_line(prompt), width, height)?;
@@ -86,7 +86,10 @@ fn frame(out: &mut Vec<u8>, editor: &Editor, latency_ns: u64, anchors: bool) -> 
     let cols = usize::from(width);
     let rows = usize::from(height - 1);
     let text = doc.text();
-    let head = selection.primary().head();
+    // The primary cursor: the block's grapheme in normal mode.
+    let head = editor
+        .cursor_position(focus)
+        .unwrap_or_else(|| selection.primary().head());
     // The anchor the view recorded when it scrolled, if still current:
     // the head's column and where its line's visible part starts, so a
     // long line is not walked again.

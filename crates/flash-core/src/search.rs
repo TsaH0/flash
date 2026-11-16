@@ -123,6 +123,10 @@ impl Cursor for Chunks<'_> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::single_range_in_vec_init,
+    reason = "expected matches are lists of byte ranges"
+)]
 mod tests {
     use proptest::prelude::*;
 

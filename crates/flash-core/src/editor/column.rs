@@ -231,7 +231,8 @@ fn walk_back(text: &Text, from: usize, column: usize, to: usize) -> Option<usize
 /// `from` (a grapheme boundary on the head's line at or before `left`, at
 /// or before `head`): the last boundary at or before `left`, or the first
 /// one at exactly `left` (zero-width graphemes there are drawn, so the
-/// start stays before them). O(distance from `from` to `left`).
+/// start goes before them, even when `from` is already at `left`).
+/// O(distance from `from` to `left`, plus zero-width graphemes before it).
 pub(crate) fn line_start_from(
     text: &Text,
     from: (usize, usize),
@@ -240,6 +241,20 @@ pub(crate) fn line_start_from(
     tab: NonZeroU8,
 ) -> Option<(usize, usize)> {
     let (mut pos, mut column) = from;
+    if column == left {
+        // Already at `left`: zero-width graphemes just before also sit
+        // there and are drawn, so the start goes before them (as
+        // `line_start_at` does). `from` is on a line, so this stops at its
+        // start at the latest (a line break is not zero-width here).
+        for g in text.graphemes(pos, Direction::Backward).ok()? {
+            if g.ends_with('\n') || g == "\t" || grapheme_width(&g, 0, NonZeroU8::MIN) != 0 {
+                break;
+            }
+            walked();
+            pos -= g.len();
+        }
+        return Some((pos, column));
+    }
     for g in text.graphemes(pos, Direction::Forward).ok()? {
         let width = grapheme_width(&g, column, tab);
         if column == left || column + width > left {
