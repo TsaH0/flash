@@ -45,3 +45,74 @@ pub fn convert(event: &ct::Event) -> Option<Event> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{
+        self as ct, KeyCode as CtKey, KeyEvent as CtKeyEvent, KeyEventKind, KeyEventState,
+        KeyModifiers,
+    };
+    use flash_core::{Event, KeyCode, KeyEvent, Modifiers};
+
+    use super::convert;
+
+    fn plain(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::plain(code))
+    }
+
+    fn ct_key(code: CtKey, modifiers: KeyModifiers) -> ct::Event {
+        ct::Event::Key(CtKeyEvent::new(code, modifiers))
+    }
+
+    #[test]
+    fn convert_maps_keys() {
+        assert_eq!(
+            convert(&ct_key(CtKey::Char('x'), KeyModifiers::NONE)),
+            Some(plain(KeyCode::Char('x')))
+        );
+        assert_eq!(
+            convert(&ct_key(
+                CtKey::Right,
+                KeyModifiers::SHIFT | KeyModifiers::CONTROL | KeyModifiers::ALT
+            )),
+            Some(Event::Key(KeyEvent::new(
+                KeyCode::Right,
+                Modifiers {
+                    shift: true,
+                    ctrl: true,
+                    alt: true
+                }
+            )))
+        );
+        assert_eq!(
+            convert(&ct_key(CtKey::BackTab, KeyModifiers::SHIFT)),
+            Some(Event::Key(KeyEvent::new(KeyCode::Tab, Modifiers::SHIFT)))
+        );
+        assert_eq!(
+            convert(&ct_key(CtKey::F(7), KeyModifiers::NONE)),
+            Some(plain(KeyCode::F(7)))
+        );
+        let release = ct::Event::Key(CtKeyEvent {
+            code: CtKey::Char('x'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Release,
+            state: KeyEventState::NONE,
+        });
+        assert_eq!(convert(&release), None);
+        assert_eq!(convert(&ct_key(CtKey::CapsLock, KeyModifiers::NONE)), None);
+        assert_eq!(convert(&ct::Event::FocusGained), None);
+        assert_eq!(
+            convert(&ct::Event::Paste("p\nq".to_owned())),
+            Some(Event::Paste {
+                text: "p\nq".to_owned()
+            })
+        );
+        assert_eq!(
+            convert(&ct::Event::Resize(3, 4)),
+            Some(Event::Resize {
+                width: 3,
+                height: 4
+            })
+        );
+    }
+}

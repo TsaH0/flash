@@ -38,6 +38,81 @@ impl Summary {
     }
 }
 
+/// Per-event timings along the input path (PLAN Stage 6
+/// instrumentation), in nanoseconds. Events handled in one batch share
+/// the batch's layout and flush.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Timing {
+    /// Event read (input thread) → frame flushed.
+    pub total: u64,
+    /// Event read → dequeued by the main loop.
+    pub queue: u64,
+    /// Dequeued → command done (key resolution, command, commit).
+    pub command: u64,
+    /// The commit inside the command (0 if none).
+    pub commit: u64,
+    /// Building the frame.
+    pub layout: u64,
+    /// Writing and flushing the frame.
+    pub flush: u64,
+}
+
+/// Timings of many events, summarised per stage.
+#[derive(Debug, Default)]
+pub struct Stages {
+    samples: Vec<Timing>,
+}
+
+impl Stages {
+    pub fn push(&mut self, t: Timing) {
+        self.samples.push(t);
+    }
+
+    pub fn len(&self) -> usize {
+        self.samples.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.samples.is_empty()
+    }
+
+    /// The last timing pushed.
+    pub fn last(&self) -> Option<&Timing> {
+        self.samples.last()
+    }
+
+    /// One JSON object: `fields`, then the total's counts and percentiles
+    /// at the top level (as before Stage 6), then `"stages"` with each
+    /// stage's percentiles. `None` without samples.
+    pub fn to_json(&self, fields: &str) -> Option<String> {
+        let pick = |f: fn(&Timing) -> u64| -> Vec<u64> { self.samples.iter().map(f).collect() };
+        let total = summarize(&pick(|t| t.total))?;
+        let mut json = total.to_json(fields);
+        json.pop();
+        json.push_str(",\"stages\":{");
+        type Stage = (&'static str, fn(&Timing) -> u64);
+        let stages: [Stage; 5] = [
+            ("queue", |t| t.queue),
+            ("command", |t| t.command),
+            ("commit", |t| t.commit),
+            ("layout", |t| t.layout),
+            ("flush", |t| t.flush),
+        ];
+        for (i, (name, f)) in stages.into_iter().enumerate() {
+            let s = summarize(&pick(f))?;
+            if i > 0 {
+                json.push(',');
+            }
+            json.push_str(&format!(
+                r#""{name}":{{"p50_ns":{},"p95_ns":{},"p99_ns":{},"max_ns":{}}}"#,
+                s.p50, s.p95, s.p99, s.max
+            ));
+        }
+        json.push_str("}}");
+        Some(json)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -55,5 +130,33 @@ mod tests {
             s.to_json(r#""source":"x""#),
             r#"{"source":"x","events":100,"p50_ns":51,"p95_ns":96,"p99_ns":100,"max_ns":100}"#
         );
+    }
+
+    #[test]
+    fn stages_json() {
+        let mut st = Stages::default();
+        assert!(st.to_json("").is_none());
+        for i in 1..=4 {
+            st.push(Timing {
+                total: 100 * i,
+                queue: i,
+                command: 10 * i,
+                commit: 0,
+                layout: 20,
+                flush: 30,
+            });
+        }
+        let json = st.to_json(r#""source":"t""#).unwrap();
+        assert!(
+            json.starts_with(r#"{"source":"t","events":4,"p50_ns":300,"#),
+            "{json}"
+        );
+        assert!(json.contains(r#""stages":{"queue":{"p50_ns":3,"#), "{json}");
+        assert!(
+            json.contains(r#""flush":{"p50_ns":30,"p95_ns":30,"p99_ns":30,"max_ns":30}}}"#),
+            "{json}"
+        );
+        assert_eq!(st.len(), 4);
+        assert_eq!(st.last().unwrap().total, 400);
     }
 }

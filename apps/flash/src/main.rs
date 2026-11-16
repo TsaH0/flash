@@ -1,58 +1,73 @@
-//! `flash <file>`: the walking skeleton in a real terminal, driven by the
-//! headless editor. `flash --replay <trace>`: replays a recorded session
-//! without a terminal and prints its latency.
+//! `flash [--tab-width N] [file]`: the terminal editor. `flash --replay
+//! <trace>`: replays a recorded session without a terminal and prints its
+//! latency.
 //!
-//! Keys: type to insert; Enter, Tab, Backspace, Delete; arrows move (Shift
-//! extends); Ctrl+arrows move by word; Home/End and Ctrl+Home/End; Alt+Up /
-//! Alt+Down add a cursor; Esc keeps only the primary cursor; Ctrl+Z undoes;
-//! Ctrl+Y or Ctrl+Shift+Z redoes; Ctrl+Q quits. There is no save.
+//! Keys (temporary until Stage 7; see `flash_core::editor::keys`): type to
+//! insert; arrows, Ctrl+arrows, Home/End, PageUp/PageDown move (Shift
+//! extends); Alt+Up/Down add a cursor; Esc keeps one; Alt+Z undo, Alt+Y
+//! redo; Ctrl+C/X/V copy, cut, paste; Ctrl+S save, Ctrl+O open, Ctrl+W
+//! close, Ctrl+PageUp/PageDown switch views; Ctrl+Z suspend; Ctrl+Q quit.
+//!
+//! Main loop (PLAN 2.8): an input thread and a signal thread feed one
+//! channel; the loop blocks for one message, drains what is already
+//! queued (up to a time budget), carries out the editor's requests, then
+//! renders once.
 //!
 //! Environment:
-//! - `FLASH_LATENCY_LOG=<file>`: on exit, append one JSON line summarising
-//!   the per-event latency (event read → frame flushed).
+//! - `FLASH_LATENCY_LOG=<file>`: on exit, append one JSON line with the
+//!   per-event latency (event read → frame flushed) and its stages.
 //! - `FLASH_TRACE=<file>`: record the session's input as a trace
 //!   (`flash_core::trace`), replayable with `--replay`. The trace contains
-//!   everything typed or pasted; the document itself is referenced by path,
+//!   everything typed or pasted; the document is referenced by path,
 //!   length, and hash, not copied.
 
 use std::env;
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufReader, BufWriter, Write};
-use std::panic;
-use std::path::Path;
+use std::io::{self, BufReader, BufWriter, IsTerminal, Write};
+use std::num::NonZeroU8;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::Instant;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::thread;
+use std::time::{Duration, Instant};
 
-use crossterm::event::{self, DisableBracketedPaste, EnableBracketedPaste};
-use crossterm::execute;
-use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
-use flash_app::latency::summarize;
-use flash_app::skeleton::{Skeleton, convert};
+use crossterm::event as ct;
+use crossterm::terminal;
+use flash_app::latency::{Stages, Timing};
+use flash_app::requests::{self, Outcome};
 use flash_core::trace::{
     self, DEFAULT_MAX_LINE, TRACE_VERSION, TraceEntry, TraceHeader, TraceReader, TraceSource,
     TraceWriter,
 };
-use flash_core::{Editor, Text, Timestamp};
+use flash_core::{Document, Editor, Text, Timestamp, file};
+use flash_term::{Renderer, convert, terminal as term};
+use signal_hook::consts::signal::{SIGCONT, SIGHUP, SIGINT, SIGSTOP, SIGTERM, SIGTSTP};
+use signal_hook::iterator::Signals;
 
-const USAGE: &str = "usage: flash <file>\n       flash --replay <trace>";
+const USAGE: &str =
+    "usage: flash [--tab-width N] [file]\n       flash --replay <trace>\n       flash --help";
+
+/// How long one batch may keep draining queued events before rendering.
+const DRAIN_BUDGET: Duration = Duration::from_millis(8);
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = env::args_os().skip(1).collect();
-    let result = match args.as_slice() {
-        [flag] if flag == "--help" || flag == "-h" => {
+    let result = match parse(&args) {
+        Ok(Command::Help) => {
             println!("{USAGE}");
             return ExitCode::SUCCESS;
         }
-        [flag, trace] if flag == "--replay" => replay(Path::new(trace)),
-        [path] if !path.to_string_lossy().starts_with("--") => run(Path::new(path)),
-        _ => {
-            eprintln!("{USAGE}");
+        Ok(Command::Replay(trace)) => replay(&trace).map(|()| Exit::Quit),
+        Ok(Command::Edit { path, tab_width }) => run(path.as_deref(), tab_width),
+        Err(message) => {
+            eprintln!("flash: {message}\n{USAGE}");
             return ExitCode::from(2);
         }
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(Exit::Quit) => ExitCode::SUCCESS,
+        Ok(Exit::Signal(sig)) => ExitCode::from(128u8.saturating_add(sig as u8)),
         Err(message) => {
             eprintln!("flash: {message}");
             ExitCode::FAILURE
@@ -60,33 +75,108 @@ fn main() -> ExitCode {
     }
 }
 
-fn now_ns(start: Instant) -> u64 {
-    u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX)
+enum Command {
+    Help,
+    Replay(PathBuf),
+    Edit {
+        path: Option<PathBuf>,
+        tab_width: NonZeroU8,
+    },
 }
 
-fn run(path: &Path) -> Result<(), String> {
-    let content = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    for var in ["FLASH_TRACE", "FLASH_LATENCY_LOG"] {
-        if let Some(out) = env::var_os(var) {
-            if same_file(Path::new(&out), path) {
-                return Err(format!(
-                    "{var}={}: is the document; refusing to write to it",
-                    Path::new(&out).display()
-                ));
+fn parse(args: &[OsString]) -> Result<Command, String> {
+    let mut path = None;
+    let mut tab_width = Editor::DEFAULT_TAB_WIDTH;
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        match arg.to_str() {
+            Some("--help" | "-h") => return Ok(Command::Help),
+            Some("--replay") => {
+                let trace = it.next().ok_or("--replay needs a trace file")?;
+                if it.next().is_some() || path.is_some() {
+                    return Err("--replay takes only a trace file".to_owned());
+                }
+                return Ok(Command::Replay(PathBuf::from(trace)));
+            }
+            Some("--tab-width") => {
+                let n = it.next().and_then(|n| n.to_str()?.parse::<u8>().ok());
+                tab_width = n
+                    .and_then(NonZeroU8::new)
+                    .ok_or("--tab-width needs a number from 1 to 255")?;
+            }
+            Some(flag) if flag.starts_with("--") => return Err(format!("unknown option {flag}")),
+            _ if path.is_none() => path = Some(PathBuf::from(arg)),
+            _ => return Err("only one file can be opened from the command line".to_owned()),
+        }
+    }
+    Ok(Command::Edit { path, tab_width })
+}
+
+/// How the editor ended.
+enum Exit {
+    Quit,
+    /// Terminated by this signal (exit status 128 + signal).
+    Signal(i32),
+}
+
+/// One message to the main loop.
+enum Msg {
+    Input(ct::Event, Instant),
+    InputError(io::Error),
+    Signal(i32),
+}
+
+fn nanos(d: Duration) -> u64 {
+    u64::try_from(d.as_nanos()).unwrap_or(u64::MAX)
+}
+
+/// The document to start with: `path` loaded (a missing file becomes a
+/// new empty document), or an empty scratch document. Refuses invalid
+/// UTF-8 and non-regular files.
+fn initial_document(path: Option<&Path>) -> Result<Document, String> {
+    let Some(path) = path else {
+        return Ok(Document::new(Text::default(), None));
+    };
+    match file::load(path) {
+        Ok(loaded) => Ok(Document::from_loaded(loaded, path.to_path_buf())),
+        Err(file::LoadError::NotFound) => {
+            Ok(Document::new(Text::default(), Some(path.to_path_buf())))
+        }
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
+}
+
+fn run(path: Option<&Path>, tab_width: NonZeroU8) -> Result<Exit, String> {
+    if let Some(path) = path {
+        for var in ["FLASH_TRACE", "FLASH_LATENCY_LOG"] {
+            if let Some(out) = env::var_os(var) {
+                if same_file(Path::new(&out), path) {
+                    return Err(format!(
+                        "{var}={}: is the document; refusing to write to it",
+                        Path::new(&out).display()
+                    ));
+                }
             }
         }
     }
+    let document = initial_document(path)?;
+    // crossterm would otherwise fall back to /dev/tty and take over
+    // whatever terminal the process happens to have.
+    if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+        return Err("standard input and output must be a terminal".to_owned());
+    }
     let (width, height) = terminal::size().unwrap_or((80, 24));
-    let text = Text::from(content);
-    let name = path.display().to_string();
 
     let mut recorder = match env::var_os("FLASH_TRACE") {
         Some(trace_path) => {
             let header = TraceHeader {
                 flash_trace: TRACE_VERSION,
-                document: TraceSource::Path(name.clone()),
-                len: text.byte_len() as u64,
-                hash: trace::content_hash(&text),
+                document: match path {
+                    Some(p) => TraceSource::Path(p.display().to_string()),
+                    None => TraceSource::Fixture("empty".to_owned()),
+                },
+                len: document.text().byte_len() as u64,
+                hash: trace::content_hash(document.text()),
                 size: (width, height),
                 cursor: 0,
             };
@@ -98,27 +188,53 @@ fn run(path: &Path) -> Result<(), String> {
     };
 
     let mut editor = Editor::new(width, height);
-    let doc = editor.open(text, Some(path.to_path_buf()));
-    editor.open_view(doc).map_err(|e| e.to_string())?;
-    let mut skeleton = Skeleton::new(name);
+    editor.set_tab_width(tab_width);
+    editor.open_document(document);
 
-    let guard = TerminalGuard::enter().map_err(|e| format!("terminal setup failed: {e}"))?;
-    let default_hook = panic::take_hook();
-    panic::set_hook(Box::new(move |info| {
-        restore_terminal();
-        default_hook(info);
-    }));
+    let (tx, rx) = mpsc::channel();
+    let mut signals = Signals::new([SIGTSTP, SIGCONT, SIGTERM, SIGHUP, SIGINT])
+        .map_err(|e| format!("signal setup failed: {e}"))?;
+    let signal_handle = signals.handle();
+    {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            for sig in signals.forever() {
+                if tx.send(Msg::Signal(sig)).is_err() {
+                    break;
+                }
+            }
+        });
+    }
 
-    let mut samples = Vec::new();
+    term::install_panic_hook();
+    let guard = term::Guard::enter().map_err(|e| format!("terminal setup failed: {e}"))?;
+    thread::spawn(move || {
+        loop {
+            match ct::read() {
+                Ok(event) => {
+                    if tx.send(Msg::Input(event, Instant::now())).is_err() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Msg::InputError(e));
+                    break;
+                }
+            }
+        }
+    });
+
+    let mut stages = Stages::default();
     let mut trace_error = None;
     let result = event_loop(
         &mut editor,
-        &mut skeleton,
-        &mut samples,
+        &rx,
+        &mut stages,
         &mut recorder,
         &mut trace_error,
     );
     drop(guard);
+    signal_handle.close();
 
     if let Some(writer) = recorder {
         if let Err(e) = writer.into_inner() {
@@ -129,8 +245,7 @@ fn run(path: &Path) -> Result<(), String> {
         eprintln!("flash: trace recording stopped: {e}");
     }
     if let Some(log) = env::var_os("FLASH_LATENCY_LOG") {
-        if let Some(summary) = summarize(&samples) {
-            let line = summary.to_json(r#""source":"interactive""#);
+        if let Some(line) = stages.to_json(r#""source":"interactive""#) {
             if let Err(e) = append_line(Path::new(&log), &line) {
                 eprintln!("flash: could not write latency log: {e}");
             }
@@ -139,56 +254,148 @@ fn run(path: &Path) -> Result<(), String> {
     result.map_err(|e| format!("terminal error: {e}"))
 }
 
-/// Reads events until quit. Each handled event's latency (read returned →
-/// flush returned) goes into `samples`; each is recorded to the trace after
-/// the frame is flushed, so recording is not part of the latency. A trace
-/// write error stops recording and is reported on exit.
+/// Restores the terminal, stops the process, and re-enters the terminal
+/// when it is continued.
+fn suspend() -> io::Result<()> {
+    term::restore();
+    signal_hook::low_level::raise(SIGSTOP)?;
+    term::enter()
+}
+
+/// The loop: one message, then everything queued (within the budget),
+/// then requests, then one frame.
 fn event_loop(
     editor: &mut Editor,
-    skeleton: &mut Skeleton,
-    samples: &mut Vec<u64>,
+    rx: &Receiver<Msg>,
+    stages: &mut Stages,
     recorder: &mut Option<TraceWriter<BufWriter<File>>>,
     trace_error: &mut Option<String>,
-) -> io::Result<()> {
+) -> io::Result<Exit> {
     let session = Instant::now();
-    let mut out = BufWriter::new(io::stdout());
-    skeleton.render(editor, &mut out)?;
+    let mut out = BufWriter::with_capacity(1 << 16, io::stdout());
+    let mut renderer = Renderer::new();
+    renderer.render(editor, 0, &mut out)?;
     out.flush()?;
+    #[cfg(debug_assertions)]
+    if env::var_os("FLASH_DEBUG_PANIC").is_some() {
+        panic!("FLASH_DEBUG_PANIC: testing terminal restore");
+    }
+    // Per batch: (read, dequeued, command done, commit ns) per event.
+    let mut batch: Vec<(Instant, Instant, Instant, u64)> = Vec::new();
+    let mut entries: Vec<TraceEntry> = Vec::new();
     loop {
-        let raw = event::read()?;
-        let start = Instant::now();
-        let Some(event) = convert(&raw) else {
-            continue;
+        let Ok(first) = rx.recv() else {
+            return Ok(Exit::Quit);
         };
-        let t_ns = now_ns(session);
-        let effects = editor.handle_at(&event, Timestamp::from_nanos(t_ns));
-        if !effects.quit && effects.needs_redraw() {
-            skeleton.render(editor, &mut out)?;
-            out.flush()?;
-        }
-        let nanos = now_ns(start);
-        skeleton.set_last_latency(nanos);
-        samples.push(nanos);
-        if let Some(writer) = recorder {
-            if let Err(e) = writer.write(&TraceEntry { t_ns, event }) {
-                *trace_error = Some(e.to_string());
-                *recorder = None;
+        let start = Instant::now();
+        let mut redraw = false;
+        let mut full_redraw = false;
+        let mut next = Some(first);
+        while let Some(msg) = next.take() {
+            match msg {
+                Msg::Input(raw, read_at) => {
+                    let dequeued = Instant::now();
+                    if let Some(event) = convert(&raw) {
+                        let t_ns = nanos(session.elapsed());
+                        let commits_before = editor.last_commit_ns();
+                        let fx = editor.handle_at(&event, Timestamp::from_nanos(t_ns));
+                        let commit = if fx.text && editor.last_commit_ns() != commits_before {
+                            editor.last_commit_ns()
+                        } else {
+                            0
+                        };
+                        batch.push((read_at, dequeued, Instant::now(), commit));
+                        redraw |= fx.needs_redraw();
+                        entries.push(TraceEntry { t_ns, event });
+                    }
+                }
+                Msg::InputError(e) => return Err(e),
+                Msg::Signal(SIGTSTP) => {
+                    suspend()?;
+                    full_redraw = true;
+                }
+                Msg::Signal(SIGCONT) => full_redraw = true,
+                Msg::Signal(sig) => return Ok(Exit::Signal(sig)),
+            }
+            for request in editor.take_requests() {
+                match requests::execute(editor, request, &mut out)? {
+                    Outcome::Done(fx) => redraw |= fx.needs_redraw(),
+                    Outcome::Suspend => {
+                        out.flush()?;
+                        suspend()?;
+                        full_redraw = true;
+                    }
+                }
+            }
+            if editor.should_quit() {
+                out.flush()?;
+                return Ok(Exit::Quit);
+            }
+            if start.elapsed() < DRAIN_BUDGET {
+                next = match rx.try_recv() {
+                    Ok(m) => Some(m),
+                    Err(TryRecvError::Empty) => None,
+                    Err(TryRecvError::Disconnected) => return Ok(Exit::Quit),
+                };
             }
         }
-        if editor.should_quit() {
-            return Ok(());
+        if full_redraw {
+            // After a suspend the screen is the shell's: clear it all.
+            crossterm::queue!(out, terminal::Clear(terminal::ClearType::All))?;
         }
+        let (mut layout, mut flush) = (0, 0);
+        if redraw || full_redraw {
+            let last = stages.last().map_or(0, |t| t.total);
+            let t0 = Instant::now();
+            let frame = renderer.frame(editor, last);
+            let t1 = Instant::now();
+            out.write_all(frame)?;
+            out.flush()?;
+            layout = nanos(t1 - t0);
+            flush = nanos(t1.elapsed());
+        } else {
+            out.flush()?;
+        }
+        let done = Instant::now();
+        for (read, dequeued, handled, commit) in batch.drain(..) {
+            stages.push(Timing {
+                total: nanos(done - read),
+                queue: nanos(dequeued - read),
+                command: nanos(handled - dequeued),
+                commit,
+                layout,
+                flush,
+            });
+        }
+        // Recording happens after the flush, so it is not in the latency.
+        if let Some(writer) = recorder {
+            for entry in entries.drain(..) {
+                if let Err(e) = writer.write(&entry) {
+                    *trace_error = Some(e.to_string());
+                    *recorder = None;
+                    break;
+                }
+            }
+        }
+        entries.clear();
     }
 }
 
-/// Replays a trace headless: every event through the editor, each frame
-/// rendered into a memory sink; prints one JSON latency summary line.
+/// Replays a trace headless: every event through the editor at its
+/// recorded time, each frame rendered into a memory sink; prints one JSON
+/// latency summary line. Requests are dropped: a replay never touches a
+/// file or the terminal.
 fn replay(trace_path: &Path) -> Result<(), String> {
     let file = File::open(trace_path).map_err(|e| format!("{}: {e}", trace_path.display()))?;
     let at = |e: trace::TraceError| format!("{}: {e}", trace_path.display());
     let mut reader = TraceReader::new(BufReader::new(file), DEFAULT_MAX_LINE).map_err(at)?;
-    let doc_path = match &reader.header().document {
-        TraceSource::Path(p) => p.clone(),
+    let text = match &reader.header().document {
+        TraceSource::Path(p) => {
+            file::load(Path::new(p))
+                .map_err(|e| format!("{p}: {e}"))?
+                .text
+        }
+        TraceSource::Fixture(name) if name == "empty" => Text::default(),
         TraceSource::Fixture(name) => {
             return Err(format!(
                 "{}: fixture trace ({name}); fixture traces replay in benches only",
@@ -196,26 +403,36 @@ fn replay(trace_path: &Path) -> Result<(), String> {
             ));
         }
     };
-    let content = fs::read_to_string(&doc_path).map_err(|e| format!("{doc_path}: {e}"))?;
-    let (mut editor, _) = trace::start(reader.header(), Text::from(content)).map_err(at)?;
-    let skeleton = Skeleton::new(doc_path);
-
+    let (mut editor, _) = trace::start(reader.header(), text).map_err(at)?;
+    let mut renderer = Renderer::new();
     let mut sink: Vec<u8> = Vec::with_capacity(1 << 16);
-    let mut samples = Vec::new();
+    let mut stages = Stages::default();
     for entry in &mut reader {
         let entry = entry.map_err(at)?;
         sink.clear();
-        let start = Instant::now();
-        let now = Timestamp::from_nanos(entry.t_ns);
-        if editor.handle_at(&entry.event, now).needs_redraw() {
-            skeleton
-                .render(&editor, &mut sink)
-                .map_err(|e| e.to_string())?;
+        let t0 = Instant::now();
+        let fx = editor.handle_at(&entry.event, Timestamp::from_nanos(entry.t_ns));
+        editor.take_requests();
+        let t1 = Instant::now();
+        let (mut layout, mut flush) = (0, 0);
+        if fx.needs_redraw() {
+            let frame = renderer.frame(&editor, 0);
+            let t2 = Instant::now();
+            sink.extend_from_slice(frame);
+            layout = nanos(t2 - t1);
+            flush = nanos(t2.elapsed());
         }
-        samples.push(now_ns(start));
+        stages.push(Timing {
+            total: nanos(t0.elapsed()),
+            queue: 0,
+            command: nanos(t1 - t0),
+            commit: if fx.text { editor.last_commit_ns() } else { 0 },
+            layout,
+            flush,
+        });
     }
-    match summarize(&samples) {
-        Some(summary) => println!("{}", summary.to_json(r#""source":"replay""#)),
+    match stages.to_json(r#""source":"replay""#) {
+        Some(line) => println!("{line}"),
         None => println!(r#"{{"source":"replay","events":0}}"#),
     }
     Ok(())
@@ -242,33 +459,4 @@ fn same_file(a: &Path, b: &Path) -> bool {
 fn append_line(path: &Path, line: &str) -> io::Result<()> {
     let mut file = OpenOptions::new().create(true).append(true).open(path)?;
     writeln!(file, "{line}")
-}
-
-/// Raw mode, alternate screen, and bracketed paste for its lifetime.
-struct TerminalGuard;
-
-impl TerminalGuard {
-    fn enter() -> io::Result<TerminalGuard> {
-        terminal::enable_raw_mode()?;
-        let guard = TerminalGuard;
-        execute!(io::stdout(), EnterAlternateScreen, EnableBracketedPaste)?;
-        Ok(guard)
-    }
-}
-
-impl Drop for TerminalGuard {
-    fn drop(&mut self) {
-        restore_terminal();
-    }
-}
-
-/// Best-effort terminal restore; safe to call more than once.
-fn restore_terminal() {
-    let _ = execute!(
-        io::stdout(),
-        DisableBracketedPaste,
-        LeaveAlternateScreen,
-        crossterm::cursor::Show
-    );
-    let _ = terminal::disable_raw_mode();
 }

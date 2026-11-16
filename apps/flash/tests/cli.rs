@@ -36,11 +36,58 @@ fn write_trace(path: &PathBuf, header: &TraceHeader, events: &[Event]) {
 
 #[test]
 fn usage_and_help() {
-    let out = flash().output().unwrap();
-    assert_eq!(out.status.code(), Some(2));
     let out = flash().arg("--help").output().unwrap();
     assert_eq!(out.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&out.stdout).contains("--replay"));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("--replay") && stdout.contains("--tab-width"));
+    for bad in [
+        &["--bogus"][..],
+        &["--tab-width"],
+        &["--tab-width", "0"],
+        &["--tab-width", "300"],
+        &["a", "b"],
+        &["--replay"],
+    ] {
+        let out = flash().args(bad).output().unwrap();
+        assert_eq!(out.status.code(), Some(2), "{bad:?}");
+        assert!(String::from_utf8_lossy(&out.stderr).contains("usage"));
+    }
+}
+
+/// Without a terminal the editor refuses to start (it must never grab
+/// the controlling terminal through /dev/tty), after loading the file.
+#[test]
+fn editing_needs_a_terminal() {
+    let dir = scratch("editing_needs_a_terminal");
+    let doc = dir.join("doc.txt");
+    fs::write(&doc, "x").unwrap();
+    for args in [vec![doc.clone()], vec![]] {
+        let out = flash()
+            .args(&args)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(1), "{args:?}");
+        assert!(String::from_utf8_lossy(&out.stderr).contains("must be a terminal"));
+    }
+}
+
+#[test]
+fn refuses_invalid_utf8_and_directories() {
+    let dir = scratch("refuses_invalid_utf8_and_directories");
+    let bin = dir.join("bin");
+    fs::write(&bin, b"ok\xff").unwrap();
+    for (path, expect) in [(&bin, "not valid UTF-8"), (&dir, "not a regular file")] {
+        let out = flash()
+            .arg(path)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(1), "{stderr}");
+        assert!(stderr.contains(expect), "{stderr}");
+    }
+    assert_eq!(fs::read(&bin).unwrap(), b"ok\xff");
 }
 
 #[test]

@@ -340,6 +340,15 @@ impl Editor {
         &self.message
     }
 
+    /// Shows `message` on the status line (the frontend reporting on a
+    /// request, e.g. a copy too large for the system clipboard).
+    pub fn notify(&mut self, message: impl fmt::Display) -> Effects {
+        Effects {
+            message: self.report(Some(message)),
+            ..Effects::default()
+        }
+    }
+
     pub fn should_quit(&self) -> bool {
         self.quit
     }

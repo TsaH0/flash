@@ -1,12 +1,12 @@
-//! End-to-end latency of the walking skeleton without a terminal.
+//! End-to-end latency of the editor without a terminal.
 //!
 //! Replays a fixed key trace (written and read back through
-//! `flash_core::trace`) through `Editor::handle` + `Skeleton::render` into an
+//! `flash_core::trace`) through `Editor::handle_at` + `Renderer::render` into an
 //! in-memory sink (cleared per event) and reports p50/p95/p99/max per
 //! fixture and viewport. This is the dequeue-to-flush path minus the
 //! terminal write itself (PLAN section 4, "End-to-end terminal path").
 //!
-//! Run: `cargo bench -p flash --bench skeleton`
+//! Run: `cargo bench -p flash --bench editor`
 //! Output: a table on stdout and JSON lines in `$FLASH_BENCH_JSON` if set.
 
 #[path = "../../../crates/flash-core/benches/common/mod.rs"]
@@ -18,12 +18,12 @@ use std::time::Instant;
 
 use common::Fixture;
 use flash_app::latency::summarize;
-use flash_app::skeleton::Skeleton;
 use flash_core::trace::{
     self, DEFAULT_MAX_LINE, TRACE_VERSION, TraceEntry, TraceHeader, TraceReader, TraceSource,
     TraceWriter,
 };
 use flash_core::{Event, KeyCode, KeyEvent, Modifiers, Text, Timestamp};
+use flash_term::Renderer;
 
 const REPEATS: usize = 100;
 
@@ -89,14 +89,14 @@ fn run(fx: &Fixture, width: u16, height: u16) -> Vec<u64> {
     let text = Text::from(fx.content.as_str());
     let (header, entries) = trace_for(fx, &text, width, height);
     let (mut editor, _) = trace::start(&header, text).unwrap();
-    let skeleton = Skeleton::new(fx.name.to_owned());
+    let mut renderer = Renderer::new();
     let mut sink: Vec<u8> = Vec::with_capacity(1 << 16);
     let mut samples = Vec::with_capacity(entries.len());
     for entry in &entries {
         sink.clear();
         let start = Instant::now();
         editor.handle_at(&entry.event, Timestamp::from_nanos(entry.t_ns));
-        skeleton.render(&editor, &mut sink).unwrap();
+        renderer.render(&editor, 0, &mut sink).unwrap();
         sink.flush().unwrap();
         samples.push(start.elapsed().as_nanos() as u64);
         black_box(&sink);

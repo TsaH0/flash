@@ -13,8 +13,17 @@ path = "src/lib.rs"
 
 [dependencies]
 flash-core.workspace = true
+flash-term.workspace = true
 crossterm.workspace = true
+# SIGTSTP/SIGCONT/SIGTERM/SIGHUP/SIGINT handling (already in the tree
+# through crossterm).
+signal-hook.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+# Pseudo-terminals for the terminal-restore smoke tests.
+rustix.workspace = true
 
 [[bench]]
-name = "skeleton"
+name = "editor"
 harness = false

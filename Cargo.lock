@@ -415,6 +415,10 @@ version = "0.1.0"
 dependencies = [
  "crossterm",
  "flash-core",
+ "flash-term",
+ "rustix",
+ "signal-hook",
+ "tempfile",
 ]
 
 [[package]]
