@@ -68,6 +68,31 @@ impl Transaction {
         walk.finish(selection)
     }
 
+    /// Replaces range `i`'s text with `pieces[i]` (a paste with one piece
+    /// per range); each range becomes a cursor after its piece. Fails with
+    /// [`TransactionError::PieceCount`] unless there is one piece per range.
+    pub fn paste<S: AsRef<str>>(
+        text: &Text,
+        selection: &Selection,
+        pieces: &[S],
+    ) -> Result<Transaction, TransactionError> {
+        let ranges = selection.ranges();
+        if pieces.len() != ranges.len() {
+            return Err(TransactionError::PieceCount {
+                pieces: pieces.len(),
+                ranges: ranges.len(),
+            });
+        }
+        selection.validate(text)?;
+        let mut walk = Walk::new(text, selection);
+        for (range, piece) in ranges.iter().zip(pieces) {
+            let piece = piece.as_ref();
+            let n = walk.edit(range.start(), range.end(), piece)?;
+            walk.push(Range::point(n + piece.len()));
+        }
+        walk.finish(selection)
+    }
+
     /// Deletes every non-empty range's text, and the grapheme before every
     /// cursor. Overlapping deletions merge (module docs).
     pub fn backspace(text: &Text, selection: &Selection) -> Result<Transaction, TransactionError> {

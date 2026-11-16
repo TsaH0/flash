@@ -23,6 +23,7 @@ use smallvec::SmallVec;
 
 use crate::changeset::{Assoc, ChangeSet, ChangeSetError};
 use crate::editor::ViewId;
+use crate::file::{DiskState, Loaded};
 use crate::selection::Selection;
 use crate::text::Text;
 use crate::transaction::{Transaction, TransactionError};
@@ -98,6 +99,12 @@ pub struct Document {
     line_ending: LineEnding,
     selections: SecondaryMap<ViewId, Selection>,
     history: History,
+    /// The file as last loaded or saved; `None` if not on disk yet.
+    disk: Option<DiskState>,
+    /// Whether the file had a UTF-8 BOM (written back on save).
+    bom: bool,
+    /// The history node whose text is on disk (or was opened).
+    saved: NodeId,
 }
 
 /// What a commit does to history.
@@ -110,16 +117,38 @@ enum Step {
 
 impl Document {
     /// A document at revision 0 with no views; detects the line ending.
+    /// Not on disk (no [`DiskState`]) and unmodified.
     pub fn new(text: Text, path: Option<PathBuf>) -> Document {
+        let line_ending = LineEnding::detect(&text);
+        Document::with_line_ending(text, path, line_ending)
+    }
+
+    /// [`Document::new`] with a known line ending (no detection pass).
+    pub fn with_line_ending(
+        text: Text,
+        path: Option<PathBuf>,
+        line_ending: LineEnding,
+    ) -> Document {
         Document {
-            line_ending: LineEnding::detect(&text),
+            line_ending,
             history: History::new(text.byte_len()),
             text,
             revision: Revision::ZERO,
             log: RevisionLog::new(),
             path,
             selections: SecondaryMap::new(),
+            disk: None,
+            bom: false,
+            saved: NodeId::ROOT,
         }
+    }
+
+    /// A document for a file loaded from `path`, unmodified.
+    pub fn from_loaded(loaded: Loaded, path: PathBuf) -> Document {
+        let mut doc = Document::with_line_ending(loaded.text, Some(path), loaded.line_ending);
+        doc.disk = Some(loaded.disk);
+        doc.bom = loaded.bom;
+        doc
     }
 
     /// Replaces the (empty) revision log, e.g. to change its bounds.
@@ -151,6 +180,34 @@ impl Document {
     /// The undo tree.
     pub fn history(&self) -> &History {
         &self.history
+    }
+
+    /// The file as last loaded or saved, for the save-time conflict check;
+    /// `None` if the document has never been on disk.
+    pub fn disk(&self) -> Option<&DiskState> {
+        self.disk.as_ref()
+    }
+
+    /// Whether the file had a UTF-8 BOM.
+    pub fn bom(&self) -> bool {
+        self.bom
+    }
+
+    /// Whether the text differs from the saved (or opened) state: the
+    /// history head is not the saved node. Undoing back to the saved state
+    /// makes the document unmodified again.
+    pub fn is_modified(&self) -> bool {
+        self.history.head() != self.saved
+    }
+
+    /// Records a successful save of the current text to `path`. Ends the
+    /// open undo group, so a later edit makes the document modified
+    /// instead of merging into the saved node.
+    pub fn mark_saved(&mut self, path: PathBuf, disk: DiskState) {
+        self.history.close_group();
+        self.saved = self.history.head();
+        self.path = Some(path);
+        self.disk = Some(disk);
     }
 
     /// Sets the longest pause between typing commits of one undo step.

@@ -12,13 +12,19 @@
 //! Only the focused view is shown and scrolled.
 //!
 //! Time is an input ([`Editor::handle_at`]): the editor never reads a
-//! clock, so replaying a trace with its recorded times groups undo steps
-//! exactly as the session did. Typing keys commit as one undo group until
-//! a pause, a motion, a paste, or an undo (PLAN Stage 5).
+//! clock for state, so replaying a trace with its recorded times groups
+//! undo steps exactly as the session did. Typing keys commit as one undo
+//! group until a pause, a motion, a paste, or an undo (PLAN Stage 5).
+//!
+//! The editor performs no I/O. Saving, opening, the system clipboard, and
+//! suspending are [`Request`]s the frontend carries out (Stage 6); a
+//! one-line [`Prompt`] asks for file names and confirmations.
 
 use std::convert::Infallible;
 use std::fmt;
+use std::num::NonZeroU8;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use slotmap::SlotMap;
 
@@ -27,14 +33,21 @@ use crate::motion::{Motion, Movement};
 use crate::selection::{Range, Selection};
 use crate::text::{Direction, Text, TextError};
 use crate::transaction::{Transaction, TransactionError};
+use crate::width::display_column;
 
+mod commands;
 mod event;
 mod ids;
 mod keys;
+mod prompt;
 
+pub use commands::Request;
 pub use event::{Event, KeyCode, KeyEvent, Modifiers};
 pub use ids::{DocumentId, ViewId};
+pub use prompt::{Prompt, PromptKind};
 
+#[cfg(test)]
+mod commands_tests;
 #[cfg(test)]
 pub(crate) mod proptests;
 #[cfg(test)]
@@ -47,6 +60,8 @@ pub struct View {
     doc: DocumentId,
     /// First visible line.
     top: usize,
+    /// First visible display column (horizontal scroll).
+    left: usize,
     /// Text area in cells (the screen minus the status row).
     width: u16,
     height: u16,
@@ -60,6 +75,11 @@ impl View {
     /// The first visible line.
     pub fn top(&self) -> usize {
         self.top
+    }
+
+    /// The first visible display column.
+    pub fn left(&self) -> usize {
+        self.left
     }
 
     /// The text area, `(width, height)` in cells.
@@ -81,6 +101,10 @@ pub struct Effects {
     pub resize: bool,
     /// The status message changed.
     pub message: bool,
+    /// The prompt opened, changed, or closed.
+    pub prompt: bool,
+    /// Requests are waiting ([`Editor::take_requests`]).
+    pub requests: bool,
     /// The editor should exit.
     pub quit: bool,
 }
@@ -88,7 +112,7 @@ pub struct Effects {
 impl Effects {
     /// Whether anything visible changed.
     pub fn needs_redraw(&self) -> bool {
-        self.text || self.selection || self.scroll || self.resize || self.message
+        self.text || self.selection || self.scroll || self.resize || self.message || self.prompt
     }
 }
 
@@ -103,9 +127,19 @@ pub struct Editor {
     quit: bool,
     /// The time of the event being handled (the last one given).
     now: Timestamp,
+    prompt: Option<Prompt>,
+    /// Copied text, one piece per range.
+    register: Vec<String>,
+    requests: Vec<Request>,
+    tab_width: NonZeroU8,
+    /// Wall time of the last commit, for instrumentation only.
+    last_commit_ns: u64,
 }
 
 impl Editor {
+    /// Columns per tab stop unless set otherwise (an option from Stage 7).
+    pub const DEFAULT_TAB_WIDTH: NonZeroU8 = NonZeroU8::new(4).unwrap();
+
     /// An editor with no documents, for a `width` × `height` screen.
     pub fn new(width: u16, height: u16) -> Editor {
         Editor {
@@ -116,6 +150,11 @@ impl Editor {
             message: String::new(),
             quit: false,
             now: Timestamp::ZERO,
+            prompt: None,
+            register: Vec::new(),
+            requests: Vec::new(),
+            tab_width: Self::DEFAULT_TAB_WIDTH,
+            last_commit_ns: 0,
         }
     }
 
@@ -134,6 +173,7 @@ impl Editor {
         let view = self.views.insert(View {
             doc,
             top: 0,
+            left: 0,
             width,
             height,
         });
@@ -267,6 +307,34 @@ impl Editor {
         self.now
     }
 
+    /// The open prompt, if any.
+    pub fn prompt(&self) -> Option<&Prompt> {
+        self.prompt.as_ref()
+    }
+
+    /// The register: the pieces last copied or cut.
+    pub fn register(&self) -> &[String] {
+        &self.register
+    }
+
+    pub fn tab_width(&self) -> NonZeroU8 {
+        self.tab_width
+    }
+
+    /// Sets the tab width used by motions, scrolling, and rendering.
+    pub fn set_tab_width(&mut self, width: NonZeroU8) {
+        self.tab_width = width;
+        if let Some(view) = self.focus {
+            self.scroll(view);
+        }
+    }
+
+    /// Nanoseconds the last key-driven commit took (instrumentation; not
+    /// editor state, and not reproduced by replay).
+    pub fn last_commit_ns(&self) -> u64 {
+        self.last_commit_ns
+    }
+
     /// The status message: the last command's error, or empty.
     pub fn message(&self) -> &str {
         &self.message
@@ -307,16 +375,11 @@ impl Editor {
                     ..Effects::default()
                 }
             }
+            _ if self.prompt.is_some() => self.prompt_event(event),
             Event::Key(KeyEvent {
                 code: KeyCode::Char('q'),
                 modifiers,
-            }) if modifiers.ctrl => {
-                self.quit = true;
-                Effects {
-                    quit: true,
-                    ..Effects::default()
-                }
-            }
+            }) if modifiers.ctrl => self.quit_command(),
             Event::Key(key) => match self.focus {
                 Some(view) => keys::handle_key(self, view, *key),
                 None => Effects::default(),
@@ -330,6 +393,7 @@ impl Editor {
         if let Some(view) = self.focus {
             fx.scroll |= self.scroll(view);
         }
+        fx.requests = !self.requests.is_empty();
         fx
     }
 
@@ -351,12 +415,21 @@ impl Editor {
             return Effects::default();
         };
         let before = doc.revision();
+        let mut commit_ns = None;
         let result = match doc.selection(view) {
             Some(sel) => make(doc.text(), sel, doc.line_ending())
                 .map_err(CommitError::from)
-                .and_then(|txn| doc.commit_with(view, txn, record)),
+                .and_then(|txn| {
+                    let start = Instant::now();
+                    let r = doc.commit_with(view, txn, record);
+                    commit_ns = Some(u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX));
+                    r
+                }),
             None => Err(CommitError::NoSuchView(view)),
         };
+        if let Some(ns) = commit_ns {
+            self.last_commit_ns = ns;
+        }
         let changed = result.as_ref().is_ok_and(|&after| after != before);
         Effects {
             text: changed,
@@ -374,6 +447,7 @@ impl Editor {
     /// Adds a cursor one line below the last range (or above the first), at
     /// its goal column, as the new primary.
     pub(crate) fn add_cursor(&mut self, view: ViewId, direction: Direction) -> Effects {
+        let tab_width = self.tab_width;
         self.reselect(view, |text, sel| {
             let ranges = sel.ranges();
             let from = match direction {
@@ -383,7 +457,7 @@ impl Editor {
             let motion = Motion::Vertical {
                 count: 1,
                 direction,
-                tab_width: keys::TAB,
+                tab_width,
             };
             let start = Range::point(from.head()).with_goal_column(from.goal_column());
             let range = motion.apply_range(text, start, Movement::Move)?;
@@ -503,13 +577,29 @@ impl Editor {
         let Some(v) = self.views.get(view) else {
             return false;
         };
-        let line = self
+        let tab = self.tab_width;
+        let place = self
             .documents
             .get(v.doc)
-            .and_then(|d| Some((d, d.selection(view)?)))
-            .and_then(|(d, sel)| d.text().line_of_offset(sel.primary().head()).ok());
-        let (Some(line), Some(v)) = (line, self.views.get_mut(view)) else {
+            .and_then(|d| Some((d, d.selection(view)?.primary().head())))
+            .and_then(|(d, head)| {
+                let line = d.text().line_of_offset(head).ok()?;
+                // O(length of the head's line).
+                let column = display_column(d.text(), head, tab).ok()?;
+                Some((line, column))
+            });
+        let (Some((line, column)), Some(v)) = (place, self.views.get_mut(view)) else {
             return false;
+        };
+        let width = usize::from(v.width);
+        let left = if width == 0 {
+            v.left
+        } else if column < v.left {
+            column
+        } else if column >= v.left + width {
+            column + 1 - width
+        } else {
+            v.left
         };
         let height = usize::from(v.height);
         let top = if height == 0 {
@@ -521,8 +611,9 @@ impl Editor {
         } else {
             v.top
         };
-        let changed = top != v.top;
+        let changed = top != v.top || left != v.left;
         v.top = top;
+        v.left = left;
         changed
     }
 }

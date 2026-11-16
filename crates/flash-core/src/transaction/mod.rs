@@ -174,6 +174,8 @@ pub enum TransactionError {
     /// selection given to a constructor, the current selection, or the
     /// transaction's selection against the text it produces.
     Selection(TextError),
+    /// [`Transaction::paste`] got `pieces` pieces for `ranges` ranges.
+    PieceCount { pieces: usize, ranges: usize },
 }
 
 impl From<ChangeSetError> for TransactionError {
@@ -193,6 +195,9 @@ impl fmt::Display for TransactionError {
         match self {
             Self::ChangeSet(e) => write!(f, "change set does not fit the text: {e}"),
             Self::Selection(e) => write!(f, "selection is not valid for the text: {e}"),
+            Self::PieceCount { pieces, ranges } => {
+                write!(f, "{pieces} pieces to paste into {ranges} ranges")
+            }
         }
     }
 }
@@ -202,6 +207,7 @@ impl std::error::Error for TransactionError {
         match self {
             Self::ChangeSet(e) => Some(e),
             Self::Selection(e) => Some(e),
+            Self::PieceCount { .. } => None,
         }
     }
 }

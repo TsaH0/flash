@@ -18,6 +18,10 @@ fn ctrl(code: KeyCode) -> Event {
     key(code, Modifiers::CTRL)
 }
 
+fn alt(code: KeyCode) -> Event {
+    key(code, Modifiers::ALT)
+}
+
 /// An 80×24 editor with one document showing `s` in one focused view.
 fn editor(s: &str) -> (Editor, DocumentId, ViewId) {
     let mut ed = Editor::new(80, 24);
@@ -334,24 +338,24 @@ fn type_at(ed: &mut Editor, s: &str, start_ms: u64) {
 fn undo_and_redo_keys() {
     let (mut ed, doc, view) = editor("");
     type_at(&mut ed, "ab", 0);
-    let fx = ed.handle(&ctrl(KeyCode::Char('z')));
+    let fx = ed.handle(&alt(KeyCode::Char('z')));
     assert!(fx.text && fx.selection, "{fx:?}");
     assert_eq!(text(&ed, doc), "");
     assert_eq!(heads(&ed, view), [0]);
-    let fx = ed.handle(&ctrl(KeyCode::Char('y')));
+    let fx = ed.handle(&alt(KeyCode::Char('y')));
     assert!(fx.text && fx.selection, "{fx:?}");
     assert_eq!(text(&ed, doc), "ab");
     assert_eq!(heads(&ed, view), [2]);
-    ed.handle(&ctrl(KeyCode::Char('z')));
-    let ctrl_shift = Modifiers {
-        ctrl: true,
+    ed.handle(&alt(KeyCode::Char('z')));
+    let alt_shift = Modifiers {
+        ctrl: false,
         shift: true,
-        alt: false,
+        alt: true,
     };
     for code in [KeyCode::Char('z'), KeyCode::Char('Z')] {
-        ed.handle(&key(code, ctrl_shift));
+        ed.handle(&key(code, alt_shift));
         assert_eq!(text(&ed, doc), "ab", "{code:?}");
-        ed.handle(&ctrl(KeyCode::Char('z')));
+        ed.handle(&alt(KeyCode::Char('z')));
     }
     assert_eq!(text(&ed, doc), "");
 }
@@ -359,10 +363,10 @@ fn undo_and_redo_keys() {
 #[test]
 fn undo_at_the_ends_reports() {
     let (mut ed, doc, _) = editor("abc");
-    let fx = ed.handle(&ctrl(KeyCode::Char('z')));
+    let fx = ed.handle(&alt(KeyCode::Char('z')));
     assert!(!fx.text && !fx.selection && fx.message, "{fx:?}");
     assert_eq!(ed.message(), "already at the oldest change");
-    let fx = ed.handle(&ctrl(KeyCode::Char('y')));
+    let fx = ed.handle(&alt(KeyCode::Char('y')));
     assert!(!fx.text && fx.message, "{fx:?}");
     assert_eq!(ed.message(), "already at the newest change");
     ed.handle(&plain(KeyCode::Char('x')));
@@ -374,7 +378,7 @@ fn undo_at_the_ends_reports() {
 fn a_typed_word_is_one_undo_step() {
     let (mut ed, doc, _) = editor("");
     type_at(&mut ed, "héllo wörld", 0);
-    ed.handle(&ctrl(KeyCode::Char('z')));
+    ed.handle(&alt(KeyCode::Char('z')));
     assert_eq!(text(&ed, doc), "");
 }
 
@@ -391,7 +395,7 @@ fn every_motion_key_ends_the_group_even_without_moving() {
         type_at(&mut ed, "ab", 0);
         ed.handle_at(&boundary, at(30));
         type_at(&mut ed, "cd", 40);
-        ed.handle(&ctrl(KeyCode::Char('z')));
+        ed.handle(&alt(KeyCode::Char('z')));
         assert_eq!(text(&ed, doc), "ab", "{boundary:?}");
     }
 }
@@ -401,7 +405,7 @@ fn a_pause_ends_the_group() {
     let (mut ed, doc, _) = editor("");
     type_at(&mut ed, "ab", 0);
     type_at(&mut ed, "cd", 5_000);
-    ed.handle(&ctrl(KeyCode::Char('z')));
+    ed.handle(&alt(KeyCode::Char('z')));
     assert_eq!(text(&ed, doc), "ab");
 }
 
@@ -412,7 +416,7 @@ fn handle_without_a_time_keeps_the_last_one() {
     assert_eq!(ed.now(), at(5_000));
     ed.handle(&plain(KeyCode::Char('b')));
     assert_eq!(ed.now(), at(5_000));
-    ed.handle(&ctrl(KeyCode::Char('z')));
+    ed.handle(&alt(KeyCode::Char('z')));
     assert_eq!(text(&ed, doc), "");
 }
 
@@ -428,7 +432,7 @@ fn a_paste_is_its_own_undo_step() {
     );
     type_at(&mut ed, "b", 20);
     for expected in ["aXY", "a", ""] {
-        ed.handle(&ctrl(KeyCode::Char('z')));
+        ed.handle(&alt(KeyCode::Char('z')));
         assert_eq!(text(&ed, doc), expected);
     }
 }
@@ -504,7 +508,7 @@ fn undo_scrolls_the_focused_view_to_the_restored_cursor() {
     ed.handle(&plain(KeyCode::Char('x')));
     ed.handle(&ctrl(KeyCode::End));
     assert!(ed.view(view).unwrap().top() > 0);
-    ed.handle(&ctrl(KeyCode::Char('z')));
+    ed.handle(&alt(KeyCode::Char('z')));
     assert_eq!(heads(&ed, view), [0]);
     assert_eq!(ed.view(view).unwrap().top(), 0);
     assert_eq!(text(&ed, doc), "line\n".repeat(100));
@@ -518,7 +522,7 @@ fn undo_from_another_view_maps_the_typing_view() {
     ed.set_selection(a, Selection::point(5)).unwrap();
     type_at(&mut ed, " world", 0);
     ed.set_focus(b).unwrap();
-    ed.handle(&ctrl(KeyCode::Char('z')));
+    ed.handle(&alt(KeyCode::Char('z')));
     assert_eq!(text(&ed, doc), "hello");
     // b gets the stored selection; a is mapped back to the end.
     assert_eq!(heads(&ed, b), [5]);
