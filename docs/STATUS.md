@@ -1,6 +1,7 @@
 # Flash status
 
-Updated: 2026-11-16, end of Stage 4 (awaiting owner approval).
+Updated: 2026-11-16, Stage 5 in progress (Stage 4 still awaiting owner
+approval).
 
 ## Completed and tested
 
@@ -62,12 +63,14 @@ Updated: 2026-11-16, end of Stage 4 (awaiting owner approval).
 
 ## In progress
 
-- Nothing. Stage 4 is waiting for review and approval
-  ([stage-4.md](stages/stage-4.md)).
+- Stage 5: undo, redo, branching history, started 2026-11-16 at the
+  owner's request (branch `stage-5`, on top of `stage-4`; design
+  [2026-11-16-stage-5-design.md](superpowers/specs/2026-11-16-stage-5-design.md)).
+  Stage 4 ([stage-4.md](stages/stage-4.md)) is still waiting for review
+  and approval.
 
 ## Planned
 
-- Stage 5: undo, redo, branching history (next, after approval).
 - Stages 6–11 as in [PLAN.md](PLAN.md).
 
 ## Deferred
