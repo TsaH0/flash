@@ -52,7 +52,7 @@ impl Editor {
 
     /// Opens `document` in a new view and focuses it.
     pub fn open_document(&mut self, document: Document) -> ViewId {
-        let doc = self.documents.insert(document);
+        let doc = self.insert_document(document);
         // The document was just inserted, so opening a view cannot fail.
         match self.open_view(doc) {
             Ok(view) => view,

@@ -31,7 +31,9 @@ pub(crate) fn handle_key(editor: &mut Editor, view: ViewId, key: KeyEvent) -> Ef
     } else {
         Movement::Move
     };
-    let tab_width = editor.tab_width();
+    let tab_width = editor
+        .view(view)
+        .map_or(Editor::DEFAULT_TAB_WIDTH, |v| v.options().tab_width);
     let grapheme = |direction| Motion::Grapheme {
         count: 1,
         direction,

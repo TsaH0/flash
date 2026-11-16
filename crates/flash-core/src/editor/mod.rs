@@ -24,11 +24,13 @@ use std::convert::Infallible;
 use std::fmt;
 use std::num::NonZeroU8;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use slotmap::SlotMap;
 
-use crate::document::{CommitError, Document, LineEnding, NodeId, Record, Revision, Timestamp};
+use crate::document::{
+    CommitError, Document, History, LineEnding, NodeId, Record, Revision, Timestamp,
+};
 use crate::motion::{Motion, Movement};
 use crate::selection::{Range, Selection};
 use crate::text::{Direction, Text, TextError};
@@ -39,12 +41,18 @@ mod commands;
 mod event;
 mod ids;
 mod keys;
+mod options;
+mod owner;
 mod prompt;
 
 pub use column::LineAnchor;
 pub use commands::Request;
 pub use event::{Event, KeyCode, KeyEvent, Modifiers};
 pub use ids::{DocumentId, ViewId};
+pub use options::{
+    OptionError, OptionId, OptionInfo, OptionKind, OptionValue, Options, Scope, ViewOptions,
+};
+pub use owner::Owner;
 pub use prompt::{Prompt, PromptKind};
 
 #[cfg(test)]
@@ -67,6 +75,8 @@ pub struct View {
     /// Text area in cells (the screen minus the status row).
     width: u16,
     height: u16,
+    /// The view's resolved built-in options.
+    options: ViewOptions,
 }
 
 impl View {
@@ -93,6 +103,11 @@ impl View {
     /// The text area, `(width, height)` in cells.
     pub fn size(&self) -> (u16, u16) {
         (self.width, self.height)
+    }
+
+    /// The view's built-in options, resolved (PLAN 2.11: a field read).
+    pub fn options(&self) -> &ViewOptions {
+        &self.options
     }
 }
 
@@ -139,7 +154,7 @@ pub struct Editor {
     /// Copied text, one piece per range.
     register: Vec<String>,
     requests: Vec<Request>,
-    tab_width: NonZeroU8,
+    options: Options,
     /// Wall time of the last commit, for instrumentation only.
     last_commit_ns: u64,
 }
@@ -161,14 +176,40 @@ impl Editor {
             prompt: None,
             register: Vec::new(),
             requests: Vec::new(),
-            tab_width: Self::DEFAULT_TAB_WIDTH,
+            options: Options::with_builtins(),
             last_commit_ns: 0,
         }
     }
 
-    /// Opens `text` as a new document with no views.
+    /// Opens `text` as a new document with no views. A text without a
+    /// line break gets the `default-line-ending` option's line ending.
     pub fn open(&mut self, text: Text, path: Option<PathBuf>) -> DocumentId {
-        self.documents.insert(Document::new(text, path))
+        let document = if text.line_count() > 1 {
+            Document::new(text, path)
+        } else {
+            Document::with_line_ending(text, path, self.default_line_ending())
+        };
+        self.insert_document(document)
+    }
+
+    /// Adds `document`, applying the document-scoped options.
+    pub(crate) fn insert_document(&mut self, mut document: Document) -> DocumentId {
+        document.set_group_pause(self.group_pause(None));
+        self.documents.insert(document)
+    }
+
+    fn default_line_ending(&self) -> LineEnding {
+        match self.options.get(OptionId::DEFAULT_LINE_ENDING, None, None) {
+            Some(OptionValue::Choice(1)) => LineEnding::Crlf,
+            _ => LineEnding::Lf,
+        }
+    }
+
+    fn group_pause(&self, doc: Option<DocumentId>) -> Duration {
+        match self.options.get(OptionId::UNDO_GROUP_PAUSE_MS, None, doc) {
+            Some(OptionValue::Int(ms)) => Duration::from_millis(u64::try_from(ms).unwrap_or(0)),
+            _ => History::DEFAULT_GROUP_PAUSE,
+        }
     }
 
     /// Opens a view of `doc` with a cursor at 0 and focuses it.
@@ -185,6 +226,7 @@ impl Editor {
             anchor: None,
             width,
             height,
+            options: self.options.resolve(None, Some(doc)),
         });
         document.add_view(view);
         self.focus = Some(view);
@@ -201,6 +243,7 @@ impl Editor {
         if let Some(doc) = self.documents.get_mut(removed.doc) {
             doc.remove_view(view);
         }
+        self.options.forget_view(view);
         self.refocus();
         Ok(())
     }
@@ -213,7 +256,9 @@ impl Editor {
             .ok_or(EditorError::NoSuchDocument(doc))?;
         for view in removed.views() {
             self.views.remove(view);
+            self.options.forget_view(view);
         }
+        self.options.forget_document(doc);
         self.refocus();
         Ok(())
     }
@@ -326,13 +371,110 @@ impl Editor {
         &self.register
     }
 
+    /// The global tab width (a view may override it: see
+    /// [`View::options`]).
     pub fn tab_width(&self) -> NonZeroU8 {
-        self.tab_width
+        self.options.resolve(None, None).tab_width
     }
 
-    /// Sets the tab width used by motions, scrolling, and rendering.
+    /// Sets the global `tab-width` option.
     pub fn set_tab_width(&mut self, width: NonZeroU8) {
-        self.tab_width = width;
+        let _ = self.set_option(
+            Scope::Global,
+            OptionId::TAB_WIDTH,
+            OptionValue::Int(i64::from(width.get())),
+        );
+    }
+
+    /// The option registry and every scope's values.
+    pub fn options(&self) -> &Options {
+        &self.options
+    }
+
+    /// Registers an option (see [`Options::register`]).
+    pub fn register_option(
+        &mut self,
+        name: &str,
+        owner: Owner,
+        doc: &str,
+        kind: OptionKind,
+        default: OptionValue,
+    ) -> Result<OptionId, OptionError> {
+        self.options.register(name, owner, doc, kind, default)
+    }
+
+    /// Sets option `id` at `scope` and re-resolves every view's options.
+    pub fn set_option(
+        &mut self,
+        scope: Scope,
+        id: OptionId,
+        value: OptionValue,
+    ) -> Result<(), OptionError> {
+        self.check_scope(scope)?;
+        self.options.set(scope, id, value)?;
+        self.refresh_options();
+        Ok(())
+    }
+
+    /// Parses `value` for the option named `name` and sets it at `scope`.
+    pub fn set_option_text(
+        &mut self,
+        scope: Scope,
+        name: &str,
+        value: &str,
+    ) -> Result<(), OptionError> {
+        let id = self
+            .options
+            .id(name)
+            .ok_or_else(|| OptionError::Unknown(name.to_owned()))?;
+        let value = self.options.parse(id, value)?;
+        self.set_option(scope, id, value)
+    }
+
+    /// Removes the value of option `id` at `scope`.
+    pub fn unset_option(&mut self, scope: Scope, id: OptionId) -> Result<(), OptionError> {
+        self.check_scope(scope)?;
+        self.options.unset(scope, id)?;
+        self.refresh_options();
+        Ok(())
+    }
+
+    /// The value of option `id` as seen by `view` (view, document, global,
+    /// default), or the global value without a view.
+    pub fn option(&self, id: OptionId, view: Option<ViewId>) -> Option<OptionValue> {
+        let doc = view.and_then(|v| self.views.get(v)).map(|v| v.doc);
+        self.options.get(id, view, doc)
+    }
+
+    fn check_scope(&self, scope: Scope) -> Result<(), OptionError> {
+        let exists = match scope {
+            Scope::Global => true,
+            Scope::View(v) => self.views.contains_key(v),
+            Scope::Document(d) => self.documents.contains_key(d),
+        };
+        if exists {
+            Ok(())
+        } else {
+            Err(OptionError::NoSuchScope)
+        }
+    }
+
+    /// Re-resolves every view's options and every document's group pause,
+    /// then re-scrolls the focused view (the tab width may have changed).
+    pub(crate) fn refresh_options(&mut self) {
+        for (id, view) in &mut self.views {
+            view.options = self.options.resolve(Some(id), Some(view.doc));
+        }
+        let pauses: Vec<(DocumentId, Duration)> = self
+            .documents
+            .keys()
+            .map(|d| (d, self.group_pause(Some(d))))
+            .collect();
+        for (d, pause) in pauses {
+            if let Some(doc) = self.documents.get_mut(d) {
+                doc.set_group_pause(pause);
+            }
+        }
         if let Some(view) = self.focus {
             self.scroll(view);
         }
@@ -465,7 +607,10 @@ impl Editor {
     /// Adds a cursor one line below the last range (or above the first), at
     /// its goal column, as the new primary.
     pub(crate) fn add_cursor(&mut self, view: ViewId, direction: Direction) -> Effects {
-        let tab_width = self.tab_width;
+        let tab_width = self
+            .views
+            .get(view)
+            .map_or(Self::DEFAULT_TAB_WIDTH, |v| v.options.tab_width);
         self.reselect(view, |text, sel| {
             let ranges = sel.ranges();
             let from = match direction {
@@ -595,10 +740,10 @@ impl Editor {
     /// from the nearest still-valid checkpoint of the previous anchor, or
     /// from the line start; see the `column` module).
     fn scroll(&mut self, view: ViewId) -> bool {
-        let tab = self.tab_width;
         let Some(v) = self.views.get(view) else {
             return false;
         };
+        let tab = v.options.tab_width;
         let Some(doc) = self.documents.get(v.doc) else {
             return false;
         };

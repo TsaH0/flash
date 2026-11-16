@@ -82,7 +82,7 @@ fn frame(out: &mut Vec<u8>, editor: &Editor, latency_ns: u64, anchors: bool) -> 
         }
         return queue!(out, EndSynchronizedUpdate);
     };
-    let tab = editor.tab_width();
+    let tab = view.options().tab_width;
     let cols = usize::from(width);
     let rows = usize::from(height - 1);
     let text = doc.text();
