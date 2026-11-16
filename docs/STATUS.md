@@ -1,6 +1,6 @@
 # Flash status
 
-Updated: 2026-11-16, Stage 5 in progress (Stage 4 still awaiting owner
+Updated: 2026-11-16, end of Stage 5 (Stages 4 and 5 awaiting owner
 approval).
 
 ## Completed and tested
@@ -44,7 +44,14 @@ approval).
   (DECISIONS 016); `FLASH_TRACE=<file>` records, `flash --replay <trace>`
   replays headless and prints latency.
 - **Standing benchmark** (`benches/document.rs`): N views × 10k
-  selections, one edit, full commit.
+  selections, one edit, full commit (with history), and its undo.
+- **History** (`document/history.rs`): branching undo tree per document;
+  forward and inverse change sets, selections before and after, times;
+  `undo`, `redo`, `goto` through the commit path; typing grouped by
+  composition until a pause, motion, paste, undo, or checkpoint; time is
+  an input (`Editor::handle_at`, trace `t_ns`) so replay groups exactly;
+  chunked node storage; no cap (DECISIONS 017–019). Temporary keys
+  Ctrl+Z / Ctrl+Y. Memory per node in `benches/history.rs`.
 - **Benchmarks** (`benches/text.rs`, `benches/latency.rs`): Criterion suite
   plus per-operation p50/p95/p99/max and allocation counts on deterministic
   fixtures. Results in `bench/results/`. Interactive skeleton latency (real
@@ -58,24 +65,30 @@ approval).
 - Stage 4 has no independent fresh-context review (owner rule: no
   delegation without a request); the implementer's review is in
   [stage-4.md](stages/stage-4.md) section G.
+- Stage 5 has no independent fresh-context review either; the
+  implementer's review is in [stage-5.md](stages/stage-5.md) section G.
+  Its design was not separately approved (owner: "complete the next
+  stage as well"); the implementer's calls are listed there.
 - `FLASH_TRACE` recording in a real terminal has no automated test (needs
   a TTY); the format and `--replay` are tested.
 
 ## In progress
 
-- Stage 5: undo, redo, branching history, started 2026-11-16 at the
-  owner's request (branch `stage-5`, on top of `stage-4`; design
-  [2026-11-16-stage-5-design.md](superpowers/specs/2026-11-16-stage-5-design.md)).
-  Stage 4 ([stage-4.md](stages/stage-4.md)) is still waiting for review
-  and approval.
+- Nothing. Stage 5 ([stage-5.md](stages/stage-5.md), branch `stage-5`)
+  and Stage 4 ([stage-4.md](stages/stage-4.md), branch `stage-4`) are
+  waiting for review and approval.
 
 ## Planned
 
-- Stages 6–11 as in [PLAN.md](PLAN.md).
+- Stage 6: minimal usable terminal editor (next, after approval); must
+  resolve Ctrl+Z (undo here, suspend in PLAN Stage 6).
+- Stages 7–11 as in [PLAN.md](PLAN.md).
 
 ## Deferred
 
 - UTF-16 metric: overhead measured in Stage 1; enabling it is decided in
   Stage 10 (LSP).
+- History cap: none until measurements or the Stage 7 option registry
+  ask for one (DECISIONS 019).
 - Up/down motion on huge single-line files is O(line length); revisit with
   the Stage 6 renderer's column cache.

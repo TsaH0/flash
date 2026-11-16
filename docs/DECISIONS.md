@@ -412,3 +412,109 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
 - **Reopen if:** Stage 7 needs traces that survive rebinding (add a
   command-level event kind alongside), or trace parsing shows up in the
   latency budget.
+
+## 017 — History: a tree of change sets inside the document, moved through commit
+
+- **Date:** 2026-11-16 (Stage 5)
+- **Decision:** each `Document` owns a `History`: nodes in creation order
+  (`NodeId`, root = the text as opened), each with forward and inverse
+  change sets, parent, `last_child`, depth, the committing view's
+  selection before and after, and a time. `Document::commit_with` records
+  every non-identity commit (the inverse is computed against the old text
+  before anything changes). `undo`, `redo`, and `goto` build a transaction
+  from the stored change set and selection and commit it through the same
+  path as an edit, then move the head instead of recording a node; so they
+  bump the revision, enter the revision log, and map every other view (the
+  invoking view gets the stored selection). `goto` composes the path (up
+  to the common ancestor, then down) into one change set and commits it
+  once: a jump is atomic and one revision. Redo follows `last_child`, the
+  branch last created or moved down into (Vim's rule); every ancestor of
+  the head points toward it, so moving up needs no bookkeeping. Nodes are
+  stored in 256-node chunks.
+- **Why:** PLAN 2.7 and Stage 5 require forward and inverse change sets and
+  undo through commit. Keeping history in the document keeps atomicity in
+  one function (DECISIONS 010, 014). Composing a jump makes it all-or-
+  nothing; mapping bystanders through a composed change set differs from
+  mapping through each step (DECISIONS 009) but both are valid, and a jump
+  is one edit. Chunked storage: a `Vec<Node>` doubling copied the whole
+  history on one keystroke (measured max 2.17 ms at 65,536 nodes, linear
+  in nodes); with chunks the worst event over 100,000 steps is 114 µs.
+- **Alternatives:** text snapshots per node (O(1) undo with shared ropes,
+  but no change set to log or map views through); linear undo/redo stacks
+  (lose branches); a jump as one commit per step (not atomic, many
+  revisions); storing children lists (nothing needs them yet; `children`
+  scans).
+- **Evidence:** `history_tests.rs` (17 cases plus chunk boundaries);
+  `history_matches_snapshot_model` (random walks against full text
+  snapshots per node; checks text, tree, stored selections, revisions, the
+  log, and every view's selection after every step);
+  `grouped_typing_matches_ungrouped`. Mutation checks in the Stage 5
+  report.
+- **Trade-off:** history memory grows with the session (DECISIONS 019).
+- **Reopen if:** persistent undo, history pruning, or a history UI needs
+  children or stable IDs across pruning.
+
+## 018 — Undo grouping: time as input, typing merges by composition
+
+- **Date:** 2026-11-16 (Stage 5)
+- **Decision:** time is an input, `Timestamp` nanoseconds; the editor never
+  reads a clock. `Editor::handle_at(event, now)` (and `handle`, which keeps
+  the last time); the binary passes its session clock, which it also
+  records as the trace's `t_ns`, and `trace::replay` passes each `t_ns`.
+  A commit recorded with `Record { group: true }` merges into the head
+  node when the open group is the same view's and the pause since the
+  node's last edit is at most the group pause (default 1 s): `forward =
+  compose(forward, c)`, `inverse = compose(c⁻¹, inverse)`, `after` and
+  `time` replaced. The group closes on a commit without `group`, any
+  selection change, `checkpoint`, undo, redo, a jump, or closing the
+  view. Typing keys (characters, Enter, Tab, Backspace, Delete) group;
+  paste and `Editor::commit` do not; every motion and Esc close the group
+  even when nothing moves. Node times are clamped so they never decrease
+  (`t_ns` is not monotonic), which makes `at_time` a binary search.
+- **Why:** deterministic replay is what makes a trace a test (DECISIONS
+  016); a wall clock inside the core would make grouping differ on replay.
+  Composition keeps a group's change sets the size of its distinct edit
+  positions, not its keystrokes.
+- **Alternatives:** wall clock in `Document` (non-deterministic replay);
+  grouping by keystroke count or word boundaries (not what PLAN names);
+  putting time on `Event` (changes the trace event format; `t_ns` already
+  carries it).
+- **Evidence:** `typing_groups_into_one_node`, `each_boundary_ends_a_group`,
+  `pause_exactly_at_the_limit_still_groups`, the editor key tests,
+  `replay_reproduces_session` (now with session-like times; comparing
+  history length and head). Making replay ignore `t_ns` fails it.
+- **Trade-off:** a frontend that calls `handle` without ever calling
+  `handle_at` never ends a group by pause. The group pause is not in the
+  trace header, so replay assumes the default until Stage 7 options.
+- **Reopen if:** Stage 7 options make the pause configurable (record it in
+  the trace), or users want word-level undo steps.
+
+## 019 — No history cap yet
+
+- **Date:** 2026-11-16 (Stage 5)
+- **Decision:** history is unbounded. PLAN Stage 5 asks for a cap with
+  oldest-leaf pruning only if the measurement asks for one; for ordinary
+  editing it does not.
+- **Evidence** (`benches/history.rs`, medium fixture, chunked storage,
+  `History::heap_bytes`): one cursor, typing grouped by sentence pauses:
+  about 520–530 bytes per node, 31.7 MB after 1,000,000 keystrokes
+  (≈ 32 bytes per keystroke). One cursor, every key its own step (keys
+  2 s apart): 384 bytes per node, 36.8 MB per 100,000 keystrokes. 100
+  cursors, every key a step: 18 KB per node. 10,000 cursors, every key a
+  step: 2.0 MB per node (two change sets of about 20,000 ops and two
+  10,000-range selections), so a few hundred separate 10,000-cursor edits
+  reach hundreds of megabytes.
+- **Why not now:** the single-cursor numbers are far inside the memory
+  budget (PLAN 0); only many ungrouped huge multi-cursor edits are large,
+  and grouped typing with any number of cursors stays one node per group
+  (composition keeps one op pair per cursor). Oldest-leaf pruning would
+  not help a linear history anyway (its only leaf is the head): a useful
+  cap must trim from the root, which needs stable IDs across trimming.
+- **Alternatives:** a node-count cap like Vim's `undolevels` (bounds
+  count, not bytes: one 10k-cursor node is 4,000 single-cursor nodes); a
+  byte budget with root trimming (the likely design when needed).
+- **Trade-off:** a long session of large multi-cursor edits holds its
+  whole history in memory.
+- **Reopen if:** Stage 7's option registry adds an undo budget, a real
+  session's history exceeds about 100 MB, or Stage 8 markers make nodes
+  larger.
