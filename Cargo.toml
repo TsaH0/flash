@@ -30,6 +30,8 @@ criterion = "0.8"
 signal-hook = "0.3"
 tempfile = "3"
 rustix = { version = "1", features = ["pty", "termios", "fs"] }
+regex-cursor = "0.1.5"
+toml = { version = "1", default-features = false, features = ["parse", "std"] }
 
 [patch.crates-io]
 # crop 0.4.3 plus one method, `Rope::chunk_at_byte` (O(log n), no allocation),

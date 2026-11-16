@@ -35,6 +35,10 @@ serde.workspace = true
 serde_json.workspace = true
 # Display columns for vertical motion and rendering.
 unicode-width.workspace = true
+# Regex over the rope for selection commands and search (PLAN Stage 7).
+regex-cursor.workspace = true
+# The config file and the embedded default config (PLAN 2.11).
+toml.workspace = true
 arbitrary = { workspace = true, optional = true }
 
 [dev-dependencies]
