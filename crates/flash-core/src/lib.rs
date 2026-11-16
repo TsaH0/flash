@@ -10,6 +10,7 @@ pub mod changeset;
 pub mod document;
 pub mod editor;
 pub mod file;
+pub mod layout;
 pub mod motion;
 pub mod search;
 pub mod selection;
@@ -35,12 +36,13 @@ pub use document::{
 pub use editor::{
     Action, Bind, CommandError, CommandId, CommandInfo, Commands, ConfigError, Context,
     CursorShape, DEFAULT_CONFIG, DocumentId, Editor, EditorError, EditorEvent, Effects, Event,
-    EventKinds, HookId, KeyCode, KeyError, KeyEvent, KeySeq, Keymap, LineAnchor, ModeError,
-    ModeFlags, ModeId, ModeInfo, Modes, Modifiers, OptionError, OptionId, OptionInfo, OptionKind,
-    OptionValue, Options, Owner, Prompt, PromptKind, Request, Resolved, SaveSnapshot, Scope, Step,
-    View, ViewId, ViewOptions, key_name, parse_key, parse_sequence,
+    EventKinds, HookId, KeyCode, KeyError, KeyEvent, KeySeq, Keymap, ModeError, ModeFlags, ModeId,
+    ModeInfo, Modes, Modifiers, OptionError, OptionId, OptionInfo, OptionKind, OptionValue,
+    Options, Owner, Prompt, PromptKind, Request, Resolved, SaveSnapshot, Scope, Step, View, ViewId,
+    ViewOptions, key_name, parse_key, parse_sequence,
 };
-pub use motion::{Motion, Movement};
+pub use layout::{Layout, LayoutConfig, Location, Row};
+pub use motion::{Columns, Motion, Movement, NoColumns};
 pub use selection::{Range, Selection, SelectionError};
 pub use text::{Direction, Text, TextBuilder, TextError, TextSlice};
 pub use transaction::{Transaction, TransactionError};

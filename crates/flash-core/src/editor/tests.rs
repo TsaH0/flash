@@ -545,11 +545,11 @@ fn undo_from_another_view_maps_the_typing_view() {
 }
 
 /// PLAN 4 `one-line`: after one jump into a long line, editing and moving
-/// near the head walk only near it (Stage 6 walked the whole line from its
-/// start on every key).
+/// near the head walk only near it (the layout's marks; Stage 6 walked
+/// the whole line from its start on every key).
 #[test]
 fn local_edits_on_a_long_line_do_not_walk_it() {
-    use super::column::{REAR, WALKED};
+    use crate::layout::{Layout, SPACING, WALKED};
     let line: String = "ab\tc老虎é😀 ".repeat(10_000);
     let (mut ed, doc, view) = editor(&line);
     let middle = line.len() / 2;
@@ -558,14 +558,14 @@ fn local_edits_on_a_long_line_do_not_walk_it() {
     let walked = || WALKED.with(|w| w.get());
     let before = walked();
     let mut now = 0;
-    // Each key walks at most from the rear checkpoint (2 * REAR bytes
-    // behind, or REAR once it is moved up) plus a view width.
+    // Each key walks from the nearest mark (at most SPACING bytes back)
+    // plus the marks it adds up to the view's left column.
     let mut press = |ed: &mut Editor, event: Event| {
         now += 2_000_000_000;
         let start = walked();
         ed.handle_at(&event, Timestamp::from_nanos(now));
         let n = walked() - start;
-        assert!(n <= 3 * REAR, "walked {n} graphemes for {event:?}");
+        assert!(n <= 4 * SPACING + 160, "walked {n} graphemes for {event:?}");
     };
     for c in "hello\tworld".chars() {
         press(&mut ed, plain(KeyCode::Char(c)));
@@ -593,54 +593,11 @@ fn local_edits_on_a_long_line_do_not_walk_it() {
         local < line.len() / 4,
         "walked {local} graphemes for local keys"
     );
-    // And the columns are right: the same as walking from the line start.
+    // And the location is right: the same as laying the line out afresh.
     let (v, d) = ed.view_document(view).unwrap();
-    let a = v.anchor().unwrap();
-    assert_eq!(d.revision(), a.revision);
-    let truth = crate::width::display_column(d.text(), a.head, a.tab_width).unwrap();
-    assert_eq!(a.head_column, truth);
+    assert_eq!(v.layout().revision(), d.revision());
+    let c = *v.cursor().unwrap();
+    let fresh = Layout::new(v.layout().config()).locate(d.text(), c.offset);
+    assert_eq!(Some(c), fresh);
     assert!(text(&ed, doc).len() > line.len());
-}
-
-/// A checkpoint is used only on the head's own line: an anchor whose rear
-/// checkpoint lies on the previous line (close enough to keep) is ignored.
-#[test]
-fn checkpoints_on_another_line_are_ignored() {
-    use super::column::{LineAnchor, REAR, locate};
-    let s = format!("{}\n{}", "a".repeat(20), "b".repeat(20));
-    let (ed, doc, _) = editor(&s);
-    let d = ed.document(doc).unwrap();
-    let head = 21 + REAR + 1;
-    let tab = NonZeroU8::new(4).unwrap();
-    let anchor = LineAnchor {
-        revision: d.revision(),
-        head: 15,
-        line: 0,
-        line_start: 0,
-        head_column: 15,
-        head_on_boundary: true,
-        tab_width: tab,
-        start: None,
-        rear: Some((head - 2 * REAR, head - 2 * REAR)),
-    };
-    let got = locate(d, Some(&anchor), head, tab).unwrap();
-    assert_eq!((got.line, got.line_start, got.column), (1, 21, REAR + 1));
-    let (rear, at) = got.rear.unwrap();
-    assert!(rear >= 21, "rear {rear} is on line 0");
-    assert_eq!(at, rear - 21);
-}
-
-/// A reused left-edge checkpoint already at the new left column still
-/// takes in the zero-width graphemes before it, as walking from the line
-/// start does (found by the renderer's random test after Stage 7a).
-#[test]
-fn a_start_reused_at_the_left_column_takes_in_zero_width_graphemes() {
-    use super::column::{line_start_at, line_start_from};
-    let tab = NonZeroU8::new(4).unwrap();
-    // x, two zero-width spaces, then y z: the spaces sit at column 1.
-    let t = Text::from("x\u{200b}\u{200b}yz");
-    assert_eq!(line_start_at(&t, 9, 3, 1), Some((1, 1)));
-    assert_eq!(line_start_from(&t, (7, 1), 9, 1, tab), Some((1, 1)));
-    assert_eq!(line_start_from(&t, (0, 0), 9, 1, tab), Some((1, 1)));
-    assert_eq!(line_start_from(&t, (7, 1), 9, 2, tab), Some((8, 2)));
 }

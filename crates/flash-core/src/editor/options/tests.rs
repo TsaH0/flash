@@ -20,6 +20,7 @@ fn builtins_are_at_their_constant_ids() {
             (OptionId::DEFAULT_LINE_ENDING, "default-line-ending"),
             (OptionId::UNDO_GROUP_MAX_BYTES, "undo-group-max-bytes"),
             (OptionId::KITTY_KEYBOARD, "kitty-keyboard"),
+            (OptionId::SOFT_WRAP, "soft-wrap"),
         ]
     );
     assert!(
@@ -91,7 +92,7 @@ fn registering_removing_and_owners() {
     o.remove_owner(plugin);
     assert_eq!((o.id("a"), o.id("b")), (None, None));
     assert!(o.info(b).is_none());
-    assert_eq!(o.iter().count(), 7, "built-ins stay");
+    assert_eq!(o.iter().count(), 8, "built-ins stay");
 }
 
 #[test]
@@ -129,10 +130,9 @@ fn scopes_resolve_view_then_document_then_global_then_default() {
     assert_eq!((tab(&ed, v1), tab(&ed, v2), tab(&ed, v3)), (8, 3, 8));
     ed.unset_option(Scope::Global, OptionId::TAB_WIDTH).unwrap();
     assert_eq!((tab(&ed, v1), tab(&ed, v2), tab(&ed, v3)), (4, 3, 4));
-    // The scroll anchor follows the view's tab width.
+    // The view's layout follows its tab width.
     ed.set_focus(v2).unwrap();
-    let a = *ed.view(v2).unwrap().anchor().unwrap();
-    assert_eq!(a.tab_width.get(), 3);
+    assert_eq!(ed.view(v2).unwrap().layout().config().tab_width.get(), 3);
     // Closed scopes are refused; a closed view's values are forgotten.
     ed.close_view(v2).unwrap();
     assert_eq!(

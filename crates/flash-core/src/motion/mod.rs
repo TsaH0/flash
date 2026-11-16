@@ -77,6 +77,31 @@ pub enum Motion {
     DocumentEnd,
 }
 
+/// Faster answers about display columns on long lines, for vertical
+/// motion: a view's [`Layout`](crate::layout::Layout). Every answer is an
+/// optimisation only; `None` means "walk from the line start", and the
+/// motion's result is the same either way.
+pub trait Columns {
+    /// The display column of `offset` (a char boundary of `text`).
+    fn column(&mut self, text: &Text, offset: usize) -> Option<usize>;
+    /// A grapheme boundary on `line` whose display column is at most
+    /// `goal`, and that column.
+    fn before(&mut self, text: &Text, line: usize, goal: usize) -> Option<(usize, usize)>;
+}
+
+/// No hints: walk every line from its start.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoColumns;
+
+impl Columns for NoColumns {
+    fn column(&mut self, _: &Text, _: usize) -> Option<usize> {
+        None
+    }
+    fn before(&mut self, _: &Text, _: usize, _: usize) -> Option<(usize, usize)> {
+        None
+    }
+}
+
 impl Motion {
     /// Applies this motion to every range of `selection` and normalises the
     /// result (ranges that meet merge; the primary survives).
@@ -89,11 +114,23 @@ impl Motion {
         selection: &Selection,
         movement: Movement,
     ) -> Result<Selection, TextError> {
+        self.apply_with(text, selection, movement, &mut NoColumns)
+    }
+
+    /// [`apply`](Self::apply), with `columns` answering column questions
+    /// on long lines (same result, less walking).
+    pub fn apply_with(
+        self,
+        text: &Text,
+        selection: &Selection,
+        movement: Movement,
+        columns: &mut dyn Columns,
+    ) -> Result<Selection, TextError> {
         selection.validate(text)?;
         let ranges = selection
             .ranges()
             .iter()
-            .map(|r| self.move_range(text, *r, movement))
+            .map(|r| self.move_range(text, *r, movement, columns))
             .collect::<Result<SmallVec<[Range; 1]>, TextError>>()?;
         Ok(normalise(ranges, selection.primary_index()))
     }
@@ -106,14 +143,31 @@ impl Motion {
         range: Range,
         movement: Movement,
     ) -> Result<Range, TextError> {
+        self.apply_range_with(text, range, movement, &mut NoColumns)
+    }
+
+    /// [`apply_range`](Self::apply_range) with column hints.
+    pub fn apply_range_with(
+        self,
+        text: &Text,
+        range: Range,
+        movement: Movement,
+        columns: &mut dyn Columns,
+    ) -> Result<Range, TextError> {
         text.check_offset(range.anchor())?;
         text.check_offset(range.head())?;
-        self.move_range(text, range, movement)
+        self.move_range(text, range, movement, columns)
     }
 
     /// `range` must be valid for `text`.
-    fn move_range(self, text: &Text, range: Range, movement: Movement) -> Result<Range, TextError> {
-        let (head, goal) = self.target(text, range)?;
+    fn move_range(
+        self,
+        text: &Text,
+        range: Range,
+        movement: Movement,
+        columns: &mut dyn Columns,
+    ) -> Result<Range, TextError> {
+        let (head, goal) = self.target(text, range, columns)?;
         let moved = match movement {
             Movement::Move => Range::point(head),
             Movement::Extend => Range::new(range.anchor(), head),
@@ -122,7 +176,12 @@ impl Motion {
     }
 
     /// The new head and, for vertical motion, the goal column.
-    fn target(self, text: &Text, range: Range) -> Result<(usize, Option<usize>), TextError> {
+    fn target(
+        self,
+        text: &Text,
+        range: Range,
+        columns: &mut dyn Columns,
+    ) -> Result<(usize, Option<usize>), TextError> {
         let head = range.head();
         Ok(match self {
             Motion::Grapheme { count, direction } => {
@@ -136,7 +195,7 @@ impl Motion {
                 direction,
                 tab_width,
             } => {
-                let (head, goal) = vertical(text, range, count, direction, tab_width)?;
+                let (head, goal) = vertical(text, range, count, direction, tab_width, columns)?;
                 (head, Some(goal))
             }
             Motion::DocumentStart => (0, None),
@@ -203,18 +262,22 @@ fn word(text: &Text, head: usize, count: usize, direction: Direction) -> Result<
 }
 
 /// Vertical motion: the new head and the goal column. O(log n + columns
-/// walked on the source and target lines).
+/// walked on the source and target lines, from `columns`' hints).
 fn vertical(
     text: &Text,
     range: Range,
     count: usize,
     direction: Direction,
     tab_width: NonZeroU8,
+    columns: &mut dyn Columns,
 ) -> Result<(usize, usize), TextError> {
     let head = range.head();
     let goal = match range.goal_column() {
         Some(goal) => goal,
-        None => display_column(text, head, tab_width)?,
+        None => match columns.column(text, head) {
+            Some(column) => column,
+            None => display_column(text, head, tab_width)?,
+        },
     };
     let line = text.line_of_offset(head)?;
     let last = text.line_count() - 1;
@@ -223,8 +286,13 @@ fn vertical(
         Direction::Backward => line.saturating_sub(count),
     };
     let content = text.line_range(target)?;
-    let (mut column, mut pos) = (0, content.start);
-    for g in text.graphemes(content.start, Direction::Forward)? {
+    // A grapheme covering `goal` cannot start before a boundary whose
+    // column is at most `goal`: the scan may start at one.
+    let (mut column, mut pos) = columns
+        .before(text, target, goal)
+        .filter(|&(o, c)| c <= goal && (content.start..=content.end).contains(&o))
+        .map_or((0, content.start), |(o, c)| (c, o));
+    for g in text.graphemes(pos, Direction::Forward)? {
         if pos >= content.end {
             break;
         }

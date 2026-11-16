@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 896f354a5114730c61cfb64a758b2bf23839620f86d92aba59acb519a426b6f6 # shrinks to s = "", tab = 1, wrap = None, ops = [Edit(Index(0), Index(0), "👨\u{200d}👩\u{200d}👧"), Vertical(Index(0), 1, false, Some(2))]

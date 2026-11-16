@@ -369,17 +369,19 @@ impl Editor {
             };
             return self.motion(view, motion, movement);
         }
-        self.map_ranges(view, |text, r| {
-            let (a, c) = (anchor_grapheme(text, r)?, cursor_grapheme(text, r)?);
-            let from = Range::point(c).with_goal_column(r.goal_column());
-            let moved = motion.apply_range(text, from, Movement::Move)?;
-            let h = moved.head();
-            let next = if extend {
-                span(text, a, h)
-            } else {
-                block(text, h)
-            };
-            Ok(next.with_goal_column(moved.goal_column()))
+        self.with_layout(view, |ed, layout| {
+            ed.map_ranges(view, |text, r| {
+                let (a, c) = (anchor_grapheme(text, r)?, cursor_grapheme(text, r)?);
+                let from = Range::point(c).with_goal_column(r.goal_column());
+                let moved = motion.apply_range_with(text, from, Movement::Move, layout)?;
+                let h = moved.head();
+                let next = if extend {
+                    span(text, a, h)
+                } else {
+                    block(text, h)
+                };
+                Ok(next.with_goal_column(moved.goal_column()))
+            })
         })
     }
 
@@ -393,7 +395,7 @@ impl Editor {
 
     /// Where `view`'s primary cursor is drawn: the start of the cursor
     /// grapheme with a block cursor, else the head. Scrolling keeps it
-    /// visible and the view's [`LineAnchor`](super::LineAnchor) describes
+    /// visible and the view's [`cursor`](super::View::cursor) describes
     /// it.
     pub fn cursor_position(&self, view: ViewId) -> Option<usize> {
         let v = self.views.get(view)?;
@@ -468,7 +470,7 @@ impl Editor {
     pub(crate) fn map_ranges(
         &mut self,
         view: ViewId,
-        f: impl Fn(&Text, Range) -> Result<Range, TextError>,
+        mut f: impl FnMut(&Text, Range) -> Result<Range, TextError>,
     ) -> Effects {
         self.reselect(view, |text, sel| {
             // Inline for one range: a motion of one cursor allocates nothing.

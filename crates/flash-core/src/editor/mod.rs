@@ -22,7 +22,7 @@
 
 use std::convert::Infallible;
 use std::fmt;
-use std::num::NonZeroU8;
+use std::num::{NonZeroU8, NonZeroUsize};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -31,13 +31,13 @@ use slotmap::SlotMap;
 use crate::document::{
     CommitError, Document, History, LineEnding, NodeId, Record, Revision, Timestamp,
 };
+use crate::layout::{Layout, LayoutConfig, Location};
 use crate::motion::{Motion, Movement};
 use crate::selection::{Range, Selection};
 use crate::text::{Direction, Text, TextError};
 use crate::transaction::{Transaction, TransactionError};
 
 mod builtin;
-mod column;
 mod command;
 mod commands;
 mod config;
@@ -51,7 +51,6 @@ mod owner;
 mod prompt;
 mod select;
 
-pub use column::LineAnchor;
 pub use command::{CommandError, CommandFn, CommandId, CommandInfo, Commands, Context};
 pub use commands::{Request, SaveSnapshot};
 pub use config::{ConfigError, DEFAULT_CONFIG};
@@ -82,11 +81,15 @@ mod tests;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct View {
     doc: DocumentId,
-    /// First visible line.
+    /// First visible line, and with soft wrap its first visible row.
     top: usize,
-    /// First visible display column (horizontal scroll).
+    top_row: usize,
+    /// First visible display column (horizontal scroll; 0 with soft wrap).
     left: usize,
-    anchor: Option<LineAnchor>,
+    /// Where lines are drawn (the display-line cache).
+    layout: Layout,
+    /// Where the primary cursor was at the last scroll.
+    cursor: Option<Location>,
     /// Text area in cells (the screen minus the status row).
     width: u16,
     height: u16,
@@ -110,10 +113,22 @@ impl View {
         self.left
     }
 
-    /// The primary head's column and where its line's visible part starts,
-    /// as of the last scroll (check its fields before use).
-    pub fn anchor(&self) -> Option<&LineAnchor> {
-        self.anchor.as_ref()
+    /// With soft wrap, the first visible row of the [`top`](Self::top)
+    /// line (0 without).
+    pub fn top_row(&self) -> usize {
+        self.top_row
+    }
+
+    /// The view's display-line cache.
+    pub fn layout(&self) -> &Layout {
+        &self.layout
+    }
+
+    /// Where the primary cursor was at the last scroll: current while the
+    /// layout's revision is the document's and the offset is the cursor's
+    /// ([`Editor::cursor_position`]).
+    pub fn cursor(&self) -> Option<&Location> {
+        self.cursor.as_ref()
     }
 
     /// The text area, `(width, height)` in cells.
@@ -318,14 +333,20 @@ impl Editor {
             .documents
             .get_mut(doc)
             .ok_or(EditorError::NoSuchDocument(doc))?;
+        let options = self.options.resolve(None, Some(doc));
         let view = self.views.insert(View {
             doc,
             top: 0,
+            top_row: 0,
             left: 0,
-            anchor: None,
+            layout: Layout::new(LayoutConfig {
+                tab_width: options.tab_width,
+                wrap: None,
+            }),
+            cursor: None,
             width,
             height,
-            options: self.options.resolve(None, Some(doc)),
+            options,
             mode: ModeId::NORMAL,
         });
         document.add_view(view);
@@ -806,9 +827,43 @@ impl Editor {
         }
     }
 
-    /// Applies `motion` to every range of `view`'s selection.
+    /// Applies `motion` to every range of `view`'s selection, with the
+    /// view's layout answering column questions on long lines.
     pub(crate) fn motion(&mut self, view: ViewId, motion: Motion, movement: Movement) -> Effects {
-        self.reselect(view, |text, sel| motion.apply(text, sel, movement))
+        self.with_layout(view, |ed, layout| {
+            ed.reselect(view, |text, sel| {
+                motion.apply_with(text, sel, movement, layout)
+            })
+        })
+    }
+
+    /// Runs `f` with `view`'s layout brought up to date with its document
+    /// (taken out of the view meanwhile, so `f` may use the editor).
+    pub(crate) fn with_layout<R>(
+        &mut self,
+        view: ViewId,
+        f: impl FnOnce(&mut Editor, &mut Layout) -> R,
+    ) -> R {
+        let mut layout = match self.views.get_mut(view) {
+            Some(v) => {
+                let config = v.layout_config();
+                let mut layout = std::mem::replace(&mut v.layout, Layout::new(config));
+                layout.set_config(config);
+                if let Some(doc) = self.documents.get(v.doc) {
+                    layout.sync(doc);
+                }
+                layout
+            }
+            None => Layout::new(LayoutConfig {
+                tab_width: Self::DEFAULT_TAB_WIDTH,
+                wrap: None,
+            }),
+        };
+        let result = f(self, &mut layout);
+        if let Some(v) = self.views.get_mut(view) {
+            v.layout = layout;
+        }
+        result
     }
 
     /// Adds a cursor one line below the last range (or above the first), at
@@ -819,25 +874,27 @@ impl Editor {
             .get(view)
             .map_or(Self::DEFAULT_TAB_WIDTH, |v| v.options.tab_width);
         let block = self.block_cursor(view);
-        self.reselect(view, |text, sel| {
-            let ranges = sel.ranges();
-            let from = match direction {
-                Direction::Forward => ranges[ranges.len() - 1],
-                Direction::Backward => ranges[0],
-            };
-            let motion = Motion::Vertical {
-                count: 1,
-                direction,
-                tab_width,
-            };
-            let at = if block {
-                mode::cursor_grapheme(text, from)?
-            } else {
-                from.head()
-            };
-            let start = Range::point(at).with_goal_column(from.goal_column());
-            let range = motion.apply_range(text, start, Movement::Move)?;
-            Ok::<_, TextError>(sel.with_range(range))
+        self.with_layout(view, |ed, layout| {
+            ed.reselect(view, |text, sel| {
+                let ranges = sel.ranges();
+                let from = match direction {
+                    Direction::Forward => ranges[ranges.len() - 1],
+                    Direction::Backward => ranges[0],
+                };
+                let motion = Motion::Vertical {
+                    count: 1,
+                    direction,
+                    tab_width,
+                };
+                let at = if block {
+                    mode::cursor_grapheme(text, from)?
+                } else {
+                    from.head()
+                };
+                let start = Range::point(at).with_goal_column(from.goal_column());
+                let range = motion.apply_range_with(text, start, Movement::Move, layout)?;
+                Ok::<_, TextError>(sel.with_range(range))
+            })
         })
     }
 
@@ -958,82 +1015,127 @@ impl Editor {
         }
     }
 
-    /// Scrolls `view` by the least amount that shows its primary head
-    /// (line and column), and records the view's [`LineAnchor`]. Returns
-    /// whether `top` or `left` changed. O(log n + view width + distance
-    /// from the nearest still-valid checkpoint of the previous anchor, or
-    /// from the line start; see the `column` module).
+    /// Scrolls `view` by the least amount that shows its primary cursor
+    /// (its row, and without wrapping its column), after bringing the
+    /// view's [`Layout`] up to date; records where the cursor is
+    /// ([`View::cursor`]). Returns whether the view scrolled. O(log n +
+    /// view size), plus walks from the layout's nearest marks (see
+    /// [`crate::layout`]).
     fn scroll(&mut self, view: ViewId) -> bool {
-        let Some(v) = self.views.get(view) else {
-            return false;
-        };
-        let tab = v.options.tab_width;
-        let Some(doc) = self.documents.get(v.doc) else {
-            return false;
-        };
         // The primary cursor: the block's grapheme in normal mode.
         let Some(head) = self.cursor_position(view) else {
             return false;
         };
-        let Some(column::Located {
-            line,
-            line_start,
-            column,
-            rear,
-            old_start,
-        }) = column::locate(doc, v.anchor.as_ref(), head, tab)
-        else {
-            return false;
-        };
-        let (width, height) = (usize::from(v.width), usize::from(v.height));
-        let left = if width == 0 {
-            v.left
-        } else if column < v.left {
-            column
-        } else if column >= v.left + width {
-            column + 1 - width
-        } else {
-            v.left
-        };
-        let top = if height == 0 {
-            v.top
-        } else if line < v.top {
-            line
-        } else if line >= v.top + height {
-            line + 1 - height
-        } else {
-            v.top
-        };
-        let anchor = LineAnchor {
-            revision: doc.revision(),
-            head,
-            line,
-            line_start,
-            head_column: column,
-            head_on_boundary: doc.text().is_grapheme_boundary(head),
-            tab_width: tab,
-            // Unscrolled (most lines): the visible part starts the line.
-            // Scrolled by less than a view width: forward from the
-            // previous start, if still valid. Else back from the head.
-            start: if left == 0 {
-                Some((line_start, 0))
-            } else if let Some(s) = old_start
-                .filter(|&(o, c)| o <= head && left.checked_sub(c).is_some_and(|d| d <= width))
-            {
-                column::line_start_from(doc.text(), s, head, left, tab)
-            } else {
-                column::line_start_at(doc.text(), head, column, left)
-            },
-            rear,
-        };
         let Some(v) = self.views.get_mut(view) else {
             return false;
         };
-        let changed = top != v.top || left != v.left;
-        v.anchor = Some(anchor);
-        v.top = top;
-        v.left = left;
-        changed
+        let Some(doc) = self.documents.get(v.doc) else {
+            return false;
+        };
+        let text = doc.text();
+        v.layout.set_config(v.layout_config());
+        v.layout.sync(doc);
+        let Some(loc) = v.layout.locate(text, head) else {
+            return false;
+        };
+        let (width, height) = (usize::from(v.width), usize::from(v.height));
+        let (old_top, old_row, old_left) = (v.top, v.top_row, v.left);
+        if v.options.soft_wrap {
+            v.left = 0;
+            v.scroll_rows(text, (loc.line, loc.row), height);
+        } else {
+            v.top_row = 0;
+            let column = loc.column;
+            if width > 0 {
+                if column < v.left {
+                    v.left = column;
+                } else if column >= v.left + width {
+                    v.left = column + 1 - width;
+                }
+            }
+            if height > 0 {
+                if loc.line < v.top {
+                    v.top = loc.line;
+                } else if loc.line >= v.top + height {
+                    v.top = loc.line + 1 - height;
+                }
+            }
+            // Visible long lines get marks up to the left column, so a
+            // renderer starts drawing them near it.
+            if v.left > 0 {
+                let last = (v.top + height).min(text.line_count());
+                for line in v.top..last {
+                    v.layout.extend_to_column(text, line, v.left);
+                }
+            }
+        }
+        v.cursor = Some(loc);
+        (v.top, v.top_row, v.left) != (old_top, old_row, old_left)
+    }
+}
+
+impl View {
+    /// The layout this view's options and size ask for.
+    fn layout_config(&self) -> LayoutConfig {
+        LayoutConfig {
+            tab_width: self.options.tab_width,
+            wrap: if self.options.soft_wrap {
+                NonZeroUsize::new(usize::from(self.width).max(1))
+            } else {
+                None
+            },
+        }
+    }
+
+    /// Wrapped: scrolls by whole rows so row `cursor` (line, row) is one of
+    /// the `height` rows from `(top, top_row)`.
+    fn scroll_rows(&mut self, text: &Text, cursor: (usize, usize), height: usize) {
+        if height == 0 {
+            return;
+        }
+        // Rows may have gone (an edit shortened the top line).
+        self.top = self.top.min(text.line_count().saturating_sub(1));
+        let top_rows = self.layout.row_count(text, self.top).unwrap_or(1);
+        self.top_row = self.top_row.min(top_rows - 1);
+        if cursor < (self.top, self.top_row) {
+            (self.top, self.top_row) = cursor;
+            return;
+        }
+        // Rows from the top to the cursor, if fewer than `height`.
+        let mut rows = 0;
+        let mut visible = true;
+        for line in self.top..=cursor.0 {
+            if rows >= height || line - self.top >= height {
+                visible = false;
+                break;
+            }
+            let first = if line == self.top { self.top_row } else { 0 };
+            if line == cursor.0 {
+                rows += cursor.1 - first;
+            } else {
+                rows += self.layout.row_count(text, line).unwrap_or(1) - first;
+            }
+        }
+        if visible && rows < height {
+            return;
+        }
+        // The cursor's row becomes the last visible one.
+        let (mut line, mut row) = cursor;
+        let mut back = height - 1;
+        while back > 0 {
+            if row > 0 {
+                let step = row.min(back);
+                row -= step;
+                back -= step;
+            } else if line > 0 {
+                line -= 1;
+                row = self.layout.row_count(text, line).unwrap_or(1) - 1;
+                back -= 1;
+            } else {
+                break;
+            }
+        }
+        (self.top, self.top_row) = (line, row);
     }
 }
 

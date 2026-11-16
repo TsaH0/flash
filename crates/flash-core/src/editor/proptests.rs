@@ -1,8 +1,8 @@
 //! Random event streams through the headless editor.
 
 use super::*;
+use crate::layout::Layout;
 use crate::selection::proptests::assert_normalised;
-use crate::width::display_column;
 
 pub(crate) const PIECES: &[&str] = &[
     "a",
@@ -109,10 +109,9 @@ pub(crate) fn random_event(rng: &mut Xorshift) -> Event {
 }
 
 /// Every view's selection is valid and normalised; the focused view shows
-/// its primary cursor's line and has a current line anchor; and every
-/// current anchor agrees with walking the head's line from its start.
+/// its primary cursor's row and has a current cursor location; and every
+/// current location agrees with laying its line out afresh.
 fn check(ed: &Editor, after: &Event) {
-    let tab = ed.tab_width();
     for (id, view) in ed.views() {
         let doc = ed.document(view.doc()).unwrap();
         let sel = doc.selection(id).unwrap();
@@ -120,17 +119,18 @@ fn check(ed: &Editor, after: &Event) {
         assert_normalised(sel).unwrap();
         let head = ed.cursor_position(id).unwrap();
         let current = view
-            .anchor()
-            .filter(|a| a.revision == doc.revision() && a.head == head && a.tab_width == tab);
+            .cursor()
+            .filter(|c| view.layout().revision() == doc.revision() && c.offset == head);
         if ed.focus() == Some(id) {
             assert!(
                 current.is_some(),
-                "focused anchor {:?} stale after {after:?}",
-                view.anchor()
+                "focused cursor {:?} stale after {after:?}",
+                view.cursor()
             );
         }
-        if let Some(a) = current {
-            check_anchor(doc.text(), a, view.left(), after);
+        if let Some(c) = current {
+            let fresh = Layout::new(view.layout().config()).locate(doc.text(), head);
+            assert_eq!(Some(*c), fresh, "cursor location after {after:?}");
         }
         // PLAN 2.5: after each command, a normal- or extend-mode view
         // has no empty range except at the end of the text.
@@ -150,79 +150,37 @@ fn check(ed: &Editor, after: &Event) {
     }
     if let Some(focus) = ed.focus() {
         let (view, doc) = ed.view_document(focus).unwrap();
-        // The cursor (the block in normal mode) is what scrolling shows.
-        let line = doc
-            .text()
-            .line_of_offset(ed.cursor_position(focus).unwrap())
-            .unwrap();
-        let height = usize::from(view.size().1);
+        let text = doc.text();
+        let c = *view.cursor().unwrap();
+        let (width, height) = (usize::from(view.size().0), usize::from(view.size().1));
         if height > 0 {
+            // Rows from the top to the cursor's, laid out afresh.
+            let mut fresh = Layout::new(view.layout().config());
             assert!(
-                (view.top()..view.top() + height).contains(&line),
-                "line {line} not visible from top {} height {height} after {after:?}",
-                view.top()
+                (view.top(), view.top_row()) <= (c.line, c.row),
+                "cursor above the top after {after:?}"
+            );
+            let mut rows = 0;
+            for line in view.top()..c.line {
+                rows += fresh.row_count(text, line).unwrap();
+            }
+            let rows = rows + c.row - view.top_row();
+            assert!(
+                rows < height,
+                "cursor row {rows} not visible after {after:?}"
             );
         }
-    }
-}
-
-fn check_anchor(text: &Text, a: &LineAnchor, left: usize, after: &Event) {
-    let line = text.line_of_offset(a.head).unwrap();
-    assert_eq!(a.line, line, "anchor line after {after:?}");
-    assert_eq!(
-        a.line_start,
-        text.line_start(line).unwrap(),
-        "line start after {after:?}"
-    );
-    let column = display_column(text, a.head, a.tab_width).unwrap();
-    assert_eq!(
-        a.head_column, column,
-        "head column of {a:?} after {after:?}"
-    );
-    assert_eq!(a.head_on_boundary, text.is_grapheme_boundary(a.head));
-    if let Some((offset, at)) = a.start {
-        assert!(
-            text.is_grapheme_boundary(offset),
-            "start {a:?} after {after:?}"
-        );
-        assert!(
-            at <= left && offset <= a.head,
-            "start {a:?} left {left} after {after:?}"
-        );
-        assert_eq!(
-            text.line_of_offset(offset).unwrap(),
-            line,
-            "{a:?} after {after:?}"
-        );
-        assert_eq!(
-            display_column(text, offset, a.tab_width).unwrap(),
-            at,
-            "{a:?} after {after:?}"
-        );
-    }
-    // Wherever it came from, the start is the point walking back from
-    // the head finds (when that walk succeeds).
-    if let Some(expected) = super::column::line_start_at(text, a.head, column, left) {
-        assert_eq!(
-            a.start,
-            Some(expected),
-            "start of {a:?} left {left} after {after:?}"
-        );
-    }
-    if let Some((offset, at)) = a.rear {
-        assert!(
-            text.is_grapheme_boundary(offset),
-            "rear {a:?} after {after:?}"
-        );
-        assert!(
-            offset >= a.line_start && offset <= a.head,
-            "rear {a:?} after {after:?}"
-        );
-        assert_eq!(
-            display_column(text, offset, a.tab_width).unwrap(),
-            at,
-            "{a:?} after {after:?}"
-        );
+        if width > 0 && !view.options().soft_wrap {
+            assert!(
+                (view.left()..view.left() + width).contains(&c.column),
+                "column {} not visible from {} after {after:?}",
+                c.column,
+                view.left()
+            );
+        }
+        if view.options().soft_wrap {
+            assert_eq!(view.left(), 0);
+        }
     }
 }
 
@@ -234,6 +192,10 @@ fn random_events_never_panic() {
             .map(|_| PIECES[rng.next(PIECES.len())])
             .collect();
         let mut ed = Editor::new(1 + rng.next(30) as u16, 1 + rng.next(8) as u16);
+        if rng.next(2) == 0 {
+            ed.set_option(Scope::Global, OptionId::SOFT_WRAP, OptionValue::Bool(true))
+                .unwrap();
+        }
         let doc = ed.open(Text::from(text.as_str()), None);
         let views = [ed.open_view(doc).unwrap(), ed.open_view(doc).unwrap()];
         let mut now: u64 = 0;

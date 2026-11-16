@@ -295,9 +295,9 @@ fn columns_after_a_disputed_cluster_are_right_on_any_terminal() {
 }
 
 #[test]
-fn anchors_match_walking_from_the_line_start() {
-    // Long lines with wide characters, combining marks, and tabs (which
-    // disable the anchor), scrolled to many positions.
+fn the_layout_cache_matches_walking_from_the_line_start() {
+    // Long lines with wide characters, combining marks, and tabs,
+    // scrolled to many positions.
     let line = "ab漢e\u{301}cd😀xyz\u{1F1FA}\u{1F1F8}".repeat(30);
     for text in [
         line.clone(),
@@ -306,7 +306,7 @@ fn anchors_match_walking_from_the_line_start() {
     ] {
         let mut ed = editor_with(&text, 17, 4);
         let mut plain = Renderer::new();
-        plain.anchors = false;
+        plain.use_layout = false;
         for i in 0..400 {
             let key = if i % 97 < 60 {
                 KeyCode::Right
@@ -318,14 +318,19 @@ fn anchors_match_walking_from_the_line_start() {
             assert_eq!(plain.frame(&ed, 0), &anchored[..], "step {i}");
         }
     }
-    // The anchor is used: the head's line starts drawing near the left
-    // column, not at the line start.
-    let mut ed = editor_with(&"a".repeat(1000), 10, 2);
+    // The cache is used: a long line starts drawing near the left column,
+    // not at the line start.
+    let mut ed = editor_with(&"a".repeat(5000), 10, 2);
     ed.handle(&plain_key(KeyCode::End));
-    let view = ed.view(ed.focus().unwrap()).unwrap();
-    let anchor = view.anchor().unwrap();
-    assert_eq!(anchor.head_column, 1000);
-    assert_eq!(anchor.start, Some((view.left(), view.left())));
+    let (view, doc) = ed.view_document(ed.focus().unwrap()).unwrap();
+    assert_eq!(view.cursor().unwrap().column, 5000);
+    let (offset, column) = view.layout().start_before(doc, 0, view.left());
+    assert_eq!(offset, column);
+    assert!(
+        column > 0 && view.left() - column <= 1100,
+        "{column} for {}",
+        view.left()
+    );
 }
 
 fn plain_key(code: KeyCode) -> Event {
@@ -521,19 +526,19 @@ fn random_events_render_cleanly() {
             let (w, h) = ed.screen();
             let bytes = renderer.frame(&ed, 0).to_vec();
             Screen::of(&bytes, w.into(), h.into());
-            // The view's line anchor never changes the frame.
-            plain_renderer.anchors = false;
+            // The view's layout cache never changes the frame.
+            plain_renderer.use_layout = false;
             if plain_renderer.frame(&ed, 0) != &bytes[..] {
                 let f = ed.focus().unwrap();
                 let (v, d) = ed.view_document(f).unwrap();
                 panic!(
-                    "after {event:?}: text {:?} sel {:?} left {} top {} size {:?} anchor {:?}",
+                    "after {event:?}: text {:?} sel {:?} left {} top {} size {:?} cursor {:?}",
                     d.text().to_string(),
                     d.selection(f),
                     v.left(),
                     v.top(),
                     v.size(),
-                    v.anchor()
+                    v.cursor()
                 );
             }
         }

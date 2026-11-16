@@ -32,6 +32,7 @@ impl OptionId {
     pub const DEFAULT_LINE_ENDING: OptionId = OptionId(4);
     pub const UNDO_GROUP_MAX_BYTES: OptionId = OptionId(5);
     pub const KITTY_KEYBOARD: OptionId = OptionId(6);
+    pub const SOFT_WRAP: OptionId = OptionId(7);
 }
 
 /// What values an option takes.
@@ -70,6 +71,7 @@ pub struct ViewOptions {
     pub tab_width: NonZeroU8,
     pub sequence_timeout_ms: u64,
     pub normal_min_grapheme: bool,
+    pub soft_wrap: bool,
 }
 
 impl Default for ViewOptions {
@@ -78,6 +80,7 @@ impl Default for ViewOptions {
             tab_width: NonZeroU8::new(4).unwrap(),
             sequence_timeout_ms: 1000,
             normal_min_grapheme: true,
+            soft_wrap: false,
         }
     }
 }
@@ -145,7 +148,7 @@ impl Options {
     /// at the IDs of the `OptionId` constants.
     pub(crate) fn with_builtins() -> Options {
         let mut o = Options::default();
-        let builtins: [(&str, &str, OptionKind, OptionValue); 7] = [
+        let builtins: [(&str, &str, OptionKind, OptionValue); 8] = [
             (
                 "tab-width",
                 "Columns per tab stop.",
@@ -196,6 +199,12 @@ impl Options {
                 "Ask the terminal for unambiguous escape codes (kitty keyboard protocol), so a split escape sequence is never read as Esc and keys.",
                 OptionKind::Bool,
                 OptionValue::Bool(true),
+            ),
+            (
+                "soft-wrap",
+                "Wrap long lines at the view's width (at a space if one fits) instead of scrolling sideways.",
+                OptionKind::Bool,
+                OptionValue::Bool(false),
             ),
         ];
         for (i, (name, doc, kind, default)) in builtins.into_iter().enumerate() {
@@ -434,6 +443,7 @@ impl Options {
             sequence_timeout_ms: u64::try_from(int(OptionId::SEQUENCE_TIMEOUT_MS)).unwrap_or(0),
             normal_min_grapheme: self.get(OptionId::NORMAL_MIN_GRAPHEME, view, doc)
                 != Some(OptionValue::Bool(false)),
+            soft_wrap: self.get(OptionId::SOFT_WRAP, view, doc) == Some(OptionValue::Bool(true)),
         }
     }
 
