@@ -10,7 +10,7 @@ use std::num::NonZeroUsize;
 use super::command::{CommandFn, Context};
 use super::mode::{self, ModeId};
 use super::owner::Owner;
-use super::{Editor, Effects, Prompt, PromptKind, Request, ViewId};
+use super::{Editor, Effects, Prompt, PromptKind, RegexAction, Request, ViewId};
 use crate::{Direction, Motion, Movement, Range, Selection, Transaction};
 
 type Body = fn(&mut Editor, &Context<'_>) -> Effects;
@@ -431,6 +431,61 @@ static MODAL: &[(&str, &str, Body)] = &[
                 ..Effects::default()
             }
         },
+    ),
+    (
+        "select-regex",
+        "Select the regex's matches inside the selections.",
+        |ed, cx| {
+            on_view(ed, cx, |ed, v| {
+                ed.regex_command(v, RegexAction::Select, cx.arg)
+            })
+        },
+    ),
+    (
+        "split-regex",
+        "Split the selections on the regex's matches.",
+        |ed, cx| {
+            on_view(ed, cx, |ed, v| {
+                ed.regex_command(v, RegexAction::Split, cx.arg)
+            })
+        },
+    ),
+    (
+        "split-lines",
+        "Split the selections into their lines.",
+        |ed, cx| {
+            on_view(ed, cx, |ed, v| {
+                ed.regex_command(v, RegexAction::Split, Some(r"\r?\n"))
+            })
+        },
+    ),
+    (
+        "keep-matching",
+        "Keep the selections that contain a regex match.",
+        |ed, cx| {
+            on_view(ed, cx, |ed, v| {
+                ed.regex_command(v, RegexAction::Keep, cx.arg)
+            })
+        },
+    ),
+    (
+        "remove-matching",
+        "Remove the selections that contain a regex match.",
+        |ed, cx| {
+            on_view(ed, cx, |ed, v| {
+                ed.regex_command(v, RegexAction::Remove, cx.arg)
+            })
+        },
+    ),
+    (
+        "rotate-primary-forward",
+        "Make the next selection the primary.",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.rotate_primary(v, true)),
+    ),
+    (
+        "rotate-primary-backward",
+        "Make the previous selection the primary.",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.rotate_primary(v, false)),
     ),
     (
         "command-line",

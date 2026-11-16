@@ -11,6 +11,7 @@ pub mod document;
 pub mod editor;
 pub mod file;
 pub mod motion;
+pub mod search;
 pub mod selection;
 pub mod text;
 pub mod trace;

@@ -49,6 +49,7 @@ mod mode;
 mod options;
 mod owner;
 mod prompt;
+mod select;
 
 pub use column::LineAnchor;
 pub use command::{CommandError, CommandFn, CommandId, CommandInfo, Commands, Context};
@@ -67,6 +68,7 @@ pub use options::{
 };
 pub use owner::Owner;
 pub use prompt::{Prompt, PromptKind};
+pub use select::RegexAction;
 
 #[cfg(test)]
 mod commands_tests;

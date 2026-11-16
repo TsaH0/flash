@@ -454,6 +454,11 @@ impl Editor {
             PromptKind::Command => {
                 fx = fx.or(self.command_line(&input));
             }
+            PromptKind::Regex(action) => {
+                if let Some(view) = self.focus {
+                    fx = fx.or(self.regex_command(view, action, Some(&input)));
+                }
+            }
             PromptKind::Open | PromptKind::SaveAs(_) => {}
             PromptKind::Overwrite(doc) => {
                 if let Some(path) = self.documents.get(doc).and_then(|d| d.path()) {

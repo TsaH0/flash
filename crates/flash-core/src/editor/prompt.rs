@@ -14,6 +14,8 @@ pub enum PromptKind {
     Open,
     /// A command line: `name [argument]`.
     Command,
+    /// A regex for a selection command.
+    Regex(super::RegexAction),
     /// A path to save this document to.
     SaveAs(DocumentId),
     /// Yes/no: overwrite this document's file, which changed on disk.
