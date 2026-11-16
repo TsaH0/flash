@@ -32,7 +32,7 @@ mod history;
 mod revision;
 
 pub use history::{History, Node, NodeId, Record, Timestamp};
-use history::{Path as HistoryPath, Plan};
+use history::{Path as HistoryPath, Plan, edit_bytes};
 pub use revision::{MapError, Revision, RevisionLog};
 
 #[cfg(test)]
@@ -105,6 +105,8 @@ pub struct Document {
     bom: bool,
     /// The history node whose text is on disk (or was opened).
     saved: NodeId,
+    /// The history node a save in progress is writing, if any.
+    saving: Option<NodeId>,
 }
 
 /// What a commit does to history.
@@ -140,6 +142,7 @@ impl Document {
             disk: None,
             bom: false,
             saved: NodeId::ROOT,
+            saving: None,
         }
     }
 
@@ -200,12 +203,42 @@ impl Document {
         self.history.head() != self.saved
     }
 
+    /// The history node a save in progress is writing, if any.
+    pub fn saving(&self) -> Option<NodeId> {
+        self.saving
+    }
+
+    /// Whether a save in progress is writing exactly the current text: if
+    /// it succeeds, the document will be unmodified.
+    pub fn is_being_saved(&self) -> bool {
+        self.saving == Some(self.history.head())
+    }
+
+    pub(crate) fn set_saving(&mut self, node: Option<NodeId>) {
+        self.saving = node;
+    }
+
     /// Records a successful save of the current text to `path`. Ends the
     /// open undo group, so a later edit makes the document modified
     /// instead of merging into the saved node.
     pub fn mark_saved(&mut self, path: PathBuf, disk: DiskState) {
-        self.history.close_group();
-        self.saved = self.history.head();
+        let head = self.history.head();
+        self.mark_saved_node(path, disk, head);
+    }
+
+    /// Records a successful save of history node `node`'s text to `path`:
+    /// a save that ran while the user kept editing wrote the text of the
+    /// node current when it started, not the head's. Ends the open undo
+    /// group if `node` is the head. A node that does not exist is ignored
+    /// (the document stays modified).
+    pub fn mark_saved_node(&mut self, path: PathBuf, disk: DiskState, node: NodeId) {
+        if self.history.node(node).is_none() {
+            return;
+        }
+        if node == self.history.head() {
+            self.history.close_group();
+        }
+        self.saved = node;
         self.path = Some(path);
         self.disk = Some(disk);
     }
@@ -213,6 +246,12 @@ impl Document {
     /// Sets the longest pause between typing commits of one undo step.
     pub fn set_group_pause(&mut self, pause: Duration) {
         self.history.set_group_pause(pause);
+    }
+
+    /// Sets the most bytes one undo group may insert and delete (0: every
+    /// commit is its own undo step).
+    pub fn set_group_max_bytes(&mut self, max: usize) {
+        self.history.set_group_max_bytes(max);
     }
 
     /// Ends the open undo group: the next commit starts a new undo step.
@@ -423,7 +462,8 @@ impl Document {
     ) -> Result<Plan, CommitError> {
         let inverse = changes.invert(&self.text).map_err(unreachable_algebra)?;
         let time = self.history.clamp(record.time);
-        if self.history.merges(view, record) {
+        let bytes = edit_bytes(changes);
+        if self.history.merges(view, record, bytes) {
             let head = self.history.head_node();
             let forward = head
                 .forward()
@@ -437,6 +477,7 @@ impl Document {
                 inverse,
                 after: after.clone(),
                 time,
+                bytes,
             })
         } else {
             Ok(Plan::Push {
@@ -447,6 +488,7 @@ impl Document {
                 time,
                 view,
                 group: record.group,
+                bytes,
             })
         }
     }

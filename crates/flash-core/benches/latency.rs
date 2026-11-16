@@ -8,6 +8,10 @@
 //! Run: `cargo bench -p flash-core --features internals --bench latency`
 //! Output: a table on stdout and JSON lines in `$FLASH_BENCH_JSON` if set.
 //!
+//! Idle mode: `FLASH_BENCH_IDLE_US=5000` sleeps 5 ms before every timed
+//! sample (`common::idle`). Hot-loop numbers find regressions; idle-mode
+//! numbers are what a keystroke after a pause costs (PLAN section 4).
+//!
 //! Timer resolution and the cost of `Instant::now` (~20 ns) are included in
 //! every sample; treat results under ~50 ns as an upper bound.
 
@@ -97,6 +101,7 @@ fn measure<S>(
         let mut s = setup(i);
         op(&mut s);
     }
+    let idle = common::idle();
     let started = Instant::now();
     let mut samples = Vec::with_capacity(ITERS);
     let (mut allocs, mut bytes) = (0u64, 0u64);
@@ -105,6 +110,9 @@ fn measure<S>(
             break;
         }
         let mut s = setup(i);
+        if let Some(pause) = idle {
+            std::thread::sleep(pause);
+        }
         let (a0, b0) = (ALLOCS.load(Relaxed), BYTES.load(Relaxed));
         let start = Instant::now();
         op(&mut s);
@@ -459,6 +467,7 @@ fn main() {
     );
     let mut json = std::env::var_os("FLASH_BENCH_JSON")
         .map(|p| std::fs::File::create(p).expect("create JSON output"));
+    let idle = common::idle_json();
     for fx in &fixtures {
         for r in run_fixture(fx) {
             println!(
@@ -468,7 +477,7 @@ fn main() {
             if let Some(f) = json.as_mut() {
                 writeln!(
                     f,
-                    r#"{{"fixture":"{}","op":"{}","samples":{},"p50_ns":{},"p95_ns":{},"p99_ns":{},"max_ns":{},"allocs_per_op":{:.3},"bytes_per_op":{:.1}}}"#,
+                    r#"{{"fixture":"{}","op":"{}","samples":{},"p50_ns":{},"p95_ns":{},"p99_ns":{},"max_ns":{},"allocs_per_op":{:.3},"bytes_per_op":{:.1}{idle}}}"#,
                     r.fixture, r.op, r.samples, r.p50, r.p95, r.p99, r.max, r.allocs_per_op, r.bytes_per_op
                 )
                 .unwrap();

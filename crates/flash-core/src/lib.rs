@@ -37,8 +37,8 @@ pub use editor::{
     CursorShape, DEFAULT_CONFIG, DocumentId, Editor, EditorError, EditorEvent, Effects, Event,
     EventKinds, HookId, KeyCode, KeyError, KeyEvent, KeySeq, Keymap, LineAnchor, ModeError,
     ModeFlags, ModeId, ModeInfo, Modes, Modifiers, OptionError, OptionId, OptionInfo, OptionKind,
-    OptionValue, Options, Owner, Prompt, PromptKind, Request, Resolved, Scope, Step, View, ViewId,
-    ViewOptions, key_name, parse_key, parse_sequence,
+    OptionValue, Options, Owner, Prompt, PromptKind, Request, Resolved, SaveSnapshot, Scope, Step,
+    View, ViewId, ViewOptions, key_name, parse_key, parse_sequence,
 };
 pub use motion::{Motion, Movement};
 pub use selection::{Range, Selection, SelectionError};

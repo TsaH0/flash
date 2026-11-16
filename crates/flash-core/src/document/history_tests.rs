@@ -5,6 +5,7 @@ use std::time::Duration;
 use slotmap::SlotMap;
 
 use super::*;
+use crate::changeset::Op;
 use crate::{Range, Text};
 
 fn view_ids(n: usize) -> Vec<ViewId> {
@@ -290,6 +291,60 @@ fn typing_groups_into_one_node() {
     doc.redo(v[0]).unwrap();
     assert_eq!(text(&doc), "héllo");
     assert_eq!(sel(&doc, v[0]), Selection::point(6));
+}
+
+/// Bytes a node's change sets carry: inserted plus deleted text.
+fn node_bytes(node: &Node) -> usize {
+    node.forward()
+        .ops()
+        .iter()
+        .chain(node.inverse().ops())
+        .map(|op| match op {
+            Op::Insert(s) => s.len(),
+            _ => 0,
+        })
+        .sum()
+}
+
+#[test]
+fn a_long_typing_run_splits_at_the_group_size_bound() {
+    // Merging composes the whole group per key, so an unbounded group makes
+    // each key cost O(group size) (PLAN revision 3, Appendix B item 1).
+    let (mut doc, v) = doc_with_views("", 1);
+    doc.set_group_max_bytes(100);
+    // One unbroken run, 1 ms apart: the pause never ends the group.
+    for i in 0..1_000u64 {
+        insert(&mut doc, v[0], "x", Record::typing(ms(i)));
+    }
+    assert_eq!(text(&doc).len(), 1_000);
+    let nodes: Vec<&Node> = doc.history().nodes().skip(1).map(|(_, n)| n).collect();
+    assert_eq!(nodes.len(), 10, "1,000 bytes in groups of at most 100");
+    for n in &nodes {
+        assert!(
+            node_bytes(n) <= 2 * 100,
+            "node holds {} bytes",
+            node_bytes(n)
+        );
+    }
+    // Still one undo step per group, and the whole run undoes.
+    for _ in 0..10 {
+        doc.undo(v[0]).unwrap();
+    }
+    assert_eq!(text(&doc), "");
+    // A bound of zero turns grouping off.
+    let (mut doc, v) = doc_with_views("", 1);
+    doc.set_group_max_bytes(0);
+    type_str(&mut doc, v[0], "abc", ms(0));
+    assert_eq!(doc.history().len(), 4);
+}
+
+#[test]
+fn the_default_group_bound_keeps_ordinary_typing_in_one_node() {
+    let (mut doc, v) = doc_with_views("", 1);
+    let word = "y".repeat(10_000);
+    type_str(&mut doc, v[0], &word, ms(0));
+    assert_eq!(doc.history().len(), 2);
+    assert_eq!(History::DEFAULT_GROUP_MAX_BYTES, 64 * 1024);
 }
 
 #[test]

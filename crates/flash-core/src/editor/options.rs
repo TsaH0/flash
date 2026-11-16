@@ -30,6 +30,8 @@ impl OptionId {
     pub const SEQUENCE_TIMEOUT_MS: OptionId = OptionId(2);
     pub const NORMAL_MIN_GRAPHEME: OptionId = OptionId(3);
     pub const DEFAULT_LINE_ENDING: OptionId = OptionId(4);
+    pub const UNDO_GROUP_MAX_BYTES: OptionId = OptionId(5);
+    pub const KITTY_KEYBOARD: OptionId = OptionId(6);
 }
 
 /// What values an option takes.
@@ -143,7 +145,7 @@ impl Options {
     /// at the IDs of the `OptionId` constants.
     pub(crate) fn with_builtins() -> Options {
         let mut o = Options::default();
-        let builtins: [(&str, &str, OptionKind, OptionValue); 5] = [
+        let builtins: [(&str, &str, OptionKind, OptionValue); 7] = [
             (
                 "tab-width",
                 "Columns per tab stop.",
@@ -179,6 +181,21 @@ impl Options {
                 "Line ending of new documents.",
                 OptionKind::Choice(&["lf", "crlf"]),
                 OptionValue::Choice(0),
+            ),
+            (
+                "undo-group-max-bytes",
+                "Typing that has inserted and deleted this many bytes starts a new undo step (0: every edit is its own step).",
+                OptionKind::Int {
+                    min: 0,
+                    max: 1 << 30,
+                },
+                OptionValue::Int(64 * 1024),
+            ),
+            (
+                "kitty-keyboard",
+                "Ask the terminal for unambiguous escape codes (kitty keyboard protocol), so a split escape sequence is never read as Esc and keys.",
+                OptionKind::Bool,
+                OptionValue::Bool(true),
             ),
         ];
         for (i, (name, doc, kind, default)) in builtins.into_iter().enumerate() {

@@ -50,19 +50,53 @@ impl Matcher {
         let base = range.start;
         let slice = text.slice(range)?;
         let chunks: Vec<&str> = slice.chunks().collect();
-        let total = slice.len();
-        let cursor = Chunks {
-            chunks: &chunks,
-            index: 0,
-            offset: 0,
-            total,
-        };
-        Ok(self
-            .regex
-            .find_iter(Input::new(cursor))
-            .filter(|m| m.start() < m.end())
-            .map(|m| base + m.start()..base + m.end())
-            .collect())
+        Ok(self.find_in_chunks(&chunks, base))
+    }
+
+    /// The matches in the concatenation of `chunks` (each non-empty,
+    /// each whole code points), offset by `base`.
+    ///
+    /// Not `find_iter`: regex-cursor 0.1.5's literal strategy (a pattern
+    /// that is an alternation of literals, such as `é|e\u{301}`) reads
+    /// ahead into the next chunk to confirm a match and never moves the
+    /// cursor back, so `find_iter`'s next search starts in that chunk and
+    /// misses a match beginning before it. Each search here starts from a
+    /// fresh cursor on the chunk holding its start (O(log chunks)).
+    /// Iteration follows `find_iter`: after a non-empty match the next
+    /// search starts at its end; after an empty one, at the next char.
+    fn find_in_chunks(&self, chunks: &[&str], base: usize) -> Vec<Range<usize>> {
+        let mut starts = Vec::with_capacity(chunks.len());
+        let mut total = 0;
+        for c in chunks {
+            starts.push(total);
+            total += c.len();
+        }
+        let mut found = Vec::new();
+        let mut pos = 0;
+        // No non-empty match can start at the end.
+        while pos < total {
+            let index = starts.partition_point(|&s| s <= pos) - 1;
+            let cursor = Chunks {
+                chunks,
+                index,
+                offset: starts[index],
+                total,
+            };
+            let mut input = Input::new(cursor);
+            input.set_start(pos);
+            let Some(m) = self.regex.find(input) else {
+                break;
+            };
+            if m.start() < m.end() {
+                found.push(base + m.start()..base + m.end());
+                pos = m.end();
+            } else if m.end() < total {
+                pos = m.end() + char_len_at(chunks, &starts, m.end());
+            } else {
+                break;
+            }
+        }
+        found
     }
 
     /// Whether `range` of `text` contains a match.
@@ -76,6 +110,18 @@ impl Matcher {
             total: slice.len(),
         };
         Ok(self.regex.find(Input::new(cursor)).is_some())
+    }
+}
+
+/// The length of the char starting at `pos` (< the total length), from its
+/// leading byte.
+fn char_len_at(chunks: &[&str], starts: &[usize], pos: usize) -> usize {
+    let index = starts.partition_point(|&s| s <= pos) - 1;
+    match chunks[index].as_bytes()[pos - starts[index]] {
+        b if b < 0x80 => 1,
+        b if b < 0xE0 => 2,
+        b if b < 0xF0 => 3,
+        _ => 4,
     }
 }
 
@@ -160,6 +206,59 @@ mod tests {
         );
     }
 
+    fn regex_matches(pat: &str, s: &str) -> Vec<Range<usize>> {
+        regex_cursor::regex_automata::meta::Regex::new(pat)
+            .unwrap()
+            .find_iter(s.as_bytes())
+            .filter(|m| m.start() < m.end())
+            .map(|m| m.range())
+            .collect()
+    }
+
+    /// Every way to cut `s` into non-empty chunks at char boundaries.
+    fn every_split(s: &str) -> Vec<Vec<&str>> {
+        let cuts: Vec<usize> = s.char_indices().map(|(i, _)| i).skip(1).collect();
+        (0u32..1 << cuts.len())
+            .map(|mask| {
+                let mut chunks = Vec::new();
+                let mut from = 0;
+                for (bit, &at) in cuts.iter().enumerate() {
+                    if mask & (1 << bit) != 0 {
+                        chunks.push(&s[from..at]);
+                        from = at;
+                    }
+                }
+                chunks.push(&s[from..]);
+                chunks
+            })
+            .collect()
+    }
+
+    /// A match that straddles a chunk boundary is found, whatever the
+    /// pattern compiles to (literal alternations use a prefilter).
+    #[test]
+    fn matches_across_every_chunk_split() {
+        let cases = [
+            ("ée\u{301}", "é|e\u{301}"),
+            ("xxneedlexxneedle", "needle"),
+            ("abcab", "abc|cab|bca"),
+            ("foo bar", "foo|bar|o b"),
+            ("aé😀b", "é😀|😀b|a"),
+            ("a\r\nb", "\r\n|b"),
+        ];
+        for (s, pat) in cases {
+            let m = Matcher::new(pat).unwrap();
+            let want = regex_matches(pat, s);
+            for chunks in every_split(s) {
+                assert_eq!(
+                    m.find_in_chunks(&chunks, 0),
+                    want,
+                    "pattern {pat:?} over chunks {chunks:?}"
+                );
+            }
+        }
+    }
+
     proptest! {
         /// Same matches as the `regex` crate on the whole string.
         #[test]
@@ -176,6 +275,41 @@ mod tests {
                 .map(|m| m.range())
                 .collect();
             prop_assert_eq!(got, want);
+        }
+
+        /// The same over chunks cut at random char boundaries, whatever
+        /// the rope's leaf size.
+        #[test]
+        fn matches_regex_over_random_chunks(
+            s in text_strategy(20),
+            cuts in prop::collection::vec(any::<prop::sample::Index>(), 0..6),
+            pat in prop::sample::select(vec![
+                "a", "xyz", r"\s+", r"\w+", "é|e\u{301}", r"\n", ".", r"[^a]+", "(?m)^",
+                "ab|ba|é", r"\r\n|\n",
+            ]),
+        ) {
+            let bounds: Vec<usize> = s.char_indices().map(|(i, _)| i).skip(1).collect();
+            let mut at: Vec<usize> = if bounds.is_empty() {
+                Vec::new()
+            } else {
+                cuts.iter().map(|c| bounds[c.index(bounds.len())]).collect()
+            };
+            at.sort_unstable();
+            at.dedup();
+            let mut chunks = Vec::new();
+            let mut from = 0;
+            for cut in at {
+                chunks.push(&s[from..cut]);
+                from = cut;
+            }
+            if from < s.len() {
+                chunks.push(&s[from..]);
+            }
+            let m = Matcher::new(pat).unwrap();
+            prop_assert_eq!(m.find_in_chunks(&chunks, 7), regex_matches(pat, &s)
+                .into_iter()
+                .map(|r| r.start + 7..r.end + 7)
+                .collect::<Vec<_>>());
         }
     }
 }

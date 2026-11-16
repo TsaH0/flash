@@ -5,5 +5,6 @@
 
 #![forbid(unsafe_code)]
 
+pub mod io;
 pub mod latency;
 pub mod requests;

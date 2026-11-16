@@ -18,6 +18,8 @@ fn builtins_are_at_their_constant_ids() {
             (OptionId::SEQUENCE_TIMEOUT_MS, "sequence-timeout-ms"),
             (OptionId::NORMAL_MIN_GRAPHEME, "normal-min-grapheme"),
             (OptionId::DEFAULT_LINE_ENDING, "default-line-ending"),
+            (OptionId::UNDO_GROUP_MAX_BYTES, "undo-group-max-bytes"),
+            (OptionId::KITTY_KEYBOARD, "kitty-keyboard"),
         ]
     );
     assert!(
@@ -89,7 +91,7 @@ fn registering_removing_and_owners() {
     o.remove_owner(plugin);
     assert_eq!((o.id("a"), o.id("b")), (None, None));
     assert!(o.info(b).is_none());
-    assert_eq!(o.iter().count(), 5, "built-ins stay");
+    assert_eq!(o.iter().count(), 7, "built-ins stay");
 }
 
 #[test]
@@ -168,6 +170,19 @@ fn group_pause_and_line_ending_reach_documents() {
     // A document opened later gets the global value.
     let later = ed.open(Text::from(""), None);
     assert_eq!(pause(&ed, later), Duration::from_millis(250));
+
+    let max = |ed: &Editor, d| ed.document(d).unwrap().history().group_max_bytes();
+    assert_eq!(max(&ed, doc), 64 * 1024);
+    ed.set_option_text(Scope::Global, "undo-group-max-bytes", "100")
+        .unwrap();
+    assert_eq!((max(&ed, doc), max(&ed, later)), (100, 100));
+    ed.set_option_text(Scope::Document(doc), "undo-group-max-bytes", "0")
+        .unwrap();
+    assert_eq!((max(&ed, doc), max(&ed, later)), (0, 100));
+    assert!(
+        ed.set_option_text(Scope::Global, "undo-group-max-bytes", "-1")
+            .is_err()
+    );
 
     ed.set_option_text(Scope::Global, "default-line-ending", "crlf")
         .unwrap();

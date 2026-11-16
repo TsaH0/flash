@@ -1,8 +1,8 @@
 # Flash status
 
-Updated: 2026-11-17, Stage 6 complete and awaiting owner approval
-(Stages 4 and 5 approved by the owner 2026-11-16); Stage 7 started at the
-owner's request.
+Updated: 2026-11-17. Stages 1–6 and 7a approved by the owner (6 and 7a
+on 2026-11-17). Stage 7 is gated three times (owner decision
+2026-11-17): 7a done, 7b in progress, 7c planned.
 
 ## Completed and tested
 
@@ -74,6 +74,29 @@ owner's request.
   walking long lines (DECISIONS 025). Interactive latency through a pty:
   p99 475 µs.
 
+- **Commands, keymaps, modes, options, config** (Stage 7a,
+  `crates/flash-core/src/editor/`): named, owned commands run without
+  keys; event hooks delivered in bounded batches; layered keymaps
+  compiled into a trie per mode, allocation-free resolution; normal,
+  insert, extend, prompt and question modes with a one-grapheme block
+  cursor (PLAN 2.5); typed options resolved view → document → global →
+  default; the default keymap is `default-config.toml`, applied like a
+  user's `~/.config/flash/config.toml` (`--config`, `:config-reload`);
+  regex selection commands over the rope (`crate::search`). No key is
+  hard-coded (DECISIONS 026–032).
+
+- **Stage 7b carried fixes** (2026-11-17, uncommitted, DECISIONS
+  033–039): regex search across chunk boundaries; undo groups bounded by
+  size (`undo-group-max-bytes`); hooks queue only wanted kinds; kitty
+  keyboard flag (`kitty-keyboard`); event time at read; saves and opens
+  on an I/O thread, with quit waiting for a running save; idle-mode
+  benches and bytes per frame. Full gate passes (fmt, clippy with and without all
+  features, workspace tests, small-chunk tests, 4,096-case property
+  tests in both leaf sizes). Interactive pty latency unchanged from 7a
+  (p50 267–281 µs, p99 531–585 µs, three runs,
+  `bench/results/stage-7b-interactive.jsonl`); the input-thread hand-off
+  is still 82–103 µs of it (Stage 7c experiment).
+
 ## Implemented but not fully verified
 
 - Stage 3 had no independent fresh-context review; the owner approved it
@@ -83,20 +106,28 @@ owner's request.
   approved both without one (2026-11-16). The implementer's reviews are
   in [stage-4.md](stages/stage-4.md) and [stage-5.md](stages/stage-5.md)
   section G.
-- Stage 6 has no independent fresh-context review; the implementer's
-  review is in [stage-6.md](stages/stage-6.md) section G. Awaiting the
-  owner's approval.
+- Stages 6 and 7a have no independent fresh-context review; the
+  implementer's reviews are in [stage-6.md](stages/stage-6.md) and
+  [stage-7a.md](stages/stage-7a.md) section G. The owner approved both
+  without one (2026-11-17).
+- Interactive latency after 7a is higher than the Stage 6 run while the
+  in-process benches are not; not explained (stage-7a.md F).
 - File ownership preservation (`fchown`) is tested only by simulation
   (needs root).
 
 ## In progress
 
-- Stage 7: commands, keymaps, modes, events, fast rendering (branch
-  `stage-7` on top of `stage-6`).
+- Stage 7b: carried fixes done (uncommitted, on branch `stage-7`);
+  next is the display-line layout cache, then search and replace and
+  soft wrap. Stage 7a still awaits the owner's approval.
 
 ## Planned
 
-- Stages 7–11 as in [PLAN.md](PLAN.md).
+- Stage 7b (carried fixes, display-line layout cache, search and replace,
+  soft wrap) and 7c (renderer judged on bytes per frame, compositing
+  grid, themes, slow output, the input-thread experiment); Stages 8–11
+  as in [PLAN.md](PLAN.md). PLAN is at revision 3 (2026-11-17): see its
+  Appendix B.
 
 ## Deferred
 

@@ -8,6 +8,10 @@
 //!
 //! Run: `cargo bench -p flash --bench editor`
 //! Output: a table on stdout and JSON lines in `$FLASH_BENCH_JSON` if set.
+//!
+//! Also reports the bytes each frame writes (PLAN section 4: what the
+//! terminal must parse and repaint, which timing to `flush` cannot see),
+//! and honours the idle mode (`FLASH_BENCH_IDLE_US`, see `common::idle`).
 
 #[path = "../../../crates/flash-core/benches/common/mod.rs"]
 mod common;
@@ -86,13 +90,16 @@ fn trace_for(fx: &Fixture, text: &Text, width: u16, height: u16) -> (TraceHeader
     (header, entries)
 }
 
-fn run(fx: &Fixture, width: u16, height: u16) -> Vec<u64> {
+/// Per-event times and frame sizes in bytes.
+fn run(fx: &Fixture, width: u16, height: u16) -> (Vec<u64>, Vec<u64>) {
     let text = Text::from(fx.content.as_str());
     let (header, entries) = trace_for(fx, &text, width, height);
     let (mut editor, _) = trace::start(&header, text).unwrap();
     let mut renderer = Renderer::new();
     let mut sink: Vec<u8> = Vec::with_capacity(1 << 16);
     let mut samples = Vec::with_capacity(entries.len());
+    let mut frame_bytes = Vec::with_capacity(entries.len());
+    let idle = common::idle();
     // The pattern types: enter insert mode first (untimed), so the run
     // measures what Stage 6's did.
     editor.handle_at(
@@ -101,14 +108,18 @@ fn run(fx: &Fixture, width: u16, height: u16) -> Vec<u64> {
     );
     for entry in &entries {
         sink.clear();
+        if let Some(pause) = idle {
+            std::thread::sleep(pause);
+        }
         let start = Instant::now();
         editor.handle_at(&entry.event, Timestamp::from_nanos(entry.t_ns));
         renderer.render(&editor, 0, &mut sink).unwrap();
         sink.flush().unwrap();
         samples.push(start.elapsed().as_nanos() as u64);
+        frame_bytes.push(sink.len() as u64);
         black_box(&sink);
     }
-    samples
+    (samples, frame_bytes)
 }
 
 fn main() {
@@ -120,25 +131,34 @@ fn main() {
         common::unicode(),
     ];
     println!(
-        "{:<10} {:<9} {:>8} {:>8} {:>8} {:>10}",
-        "fixture", "viewport", "p50 ns", "p95 ns", "p99 ns", "max ns"
+        "{:<10} {:<9} {:>8} {:>8} {:>8} {:>10} {:>9} {:>9}",
+        "fixture", "viewport", "p50 ns", "p95 ns", "p99 ns", "max ns", "p50 B", "max B"
     );
+    let idle = common::idle_json();
     let mut json = std::env::var_os("FLASH_BENCH_JSON")
         .map(|p| std::fs::File::create(p).expect("create JSON output"));
     for fx in &fixtures {
         for (w, h) in [(80, 24), (200, 60)] {
-            let s = summarize(&run(fx, w, h)).expect("trace is non-empty");
+            let (times, bytes) = run(fx, w, h);
+            let s = summarize(&times).expect("trace is non-empty");
+            let b = summarize(&bytes).expect("trace is non-empty");
             let viewport = format!("{w}x{h}");
             println!(
-                "{:<10} {:<9} {:>8} {:>8} {:>8} {:>10}",
-                fx.name, viewport, s.p50, s.p95, s.p99, s.max
+                "{:<10} {:<9} {:>8} {:>8} {:>8} {:>10} {:>9} {:>9}",
+                fx.name, viewport, s.p50, s.p95, s.p99, s.max, b.p50, b.max
             );
             if let Some(f) = json.as_mut() {
                 let fields = format!(
-                    r#""fixture":"{}","viewport":"{viewport}","op":"skeleton event""#,
+                    r#""fixture":"{}","viewport":"{viewport}","op":"skeleton event"{idle}"#,
                     fx.name
                 );
-                writeln!(f, "{}", s.to_json(&fields)).unwrap();
+                let mut line = s.to_json(&fields);
+                line.pop();
+                line.push_str(&format!(
+                    r#","frame_bytes":{{"p50":{},"p99":{},"max":{}}}}}"#,
+                    b.p50, b.p99, b.max
+                ));
+                writeln!(f, "{line}").unwrap();
             }
         }
     }

@@ -7,8 +7,8 @@ use std::io::{self, Write};
 use std::num::NonZeroU8;
 use std::path::PathBuf;
 
-use flash_core::{Editor, Effects, Request, Text, file, trace};
-use flash_term::osc52;
+use flash_core::{Editor, Effects, OptionId, OptionValue, Request, Text, file, trace};
+use flash_term::{osc52, terminal as term};
 
 /// The user's config file and the command line's overrides of it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -34,8 +34,10 @@ impl Settings {
 
 /// Reads the config file and applies it as the user layer (a missing file
 /// clears it; an unreadable one is reported and changes nothing), then the
-/// command line's overrides. Returns the effects and the
-/// [`trace::content_hash`] of the text applied, if any.
+/// command line's overrides, then the terminal options (the keyboard
+/// protocol flag, pushed or popped at once if the terminal is entered).
+/// Returns the effects and the [`trace::content_hash`] of the text
+/// applied, if any.
 pub fn load_config(editor: &mut Editor, settings: &Settings) -> (Effects, Option<u64>) {
     let (fx, hash) = match &settings.config {
         Some(path) => match fs::read(path) {
@@ -58,6 +60,14 @@ pub fn load_config(editor: &mut Editor, settings: &Settings) -> (Effects, Option
     if let Some(n) = settings.tab_width {
         editor.set_tab_width(n);
     }
+    let kitty = !matches!(
+        editor.option(OptionId::KITTY_KEYBOARD, None),
+        Some(OptionValue::Bool(false))
+    );
+    let fx = match term::set_kitty_keyboard(kitty) {
+        Ok(()) => fx,
+        Err(e) => fx.or(editor.notify(format_args!("keyboard protocol: {e}"))),
+    };
     (fx, hash)
 }
 

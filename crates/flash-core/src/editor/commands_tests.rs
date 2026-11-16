@@ -98,6 +98,91 @@ fn save_requests_and_records_the_result() {
     assert_eq!(text(&ed, doc), "xabc");
 }
 
+/// A save runs off the main thread: what it wrote is the snapshot taken
+/// when it started. Typing while it runs must not count as saved, even
+/// typing that would have joined the open undo group.
+#[test]
+fn a_save_marks_its_snapshot_not_later_typing() {
+    let (mut ed, doc, _) = editor_with("abc", Some("a.txt"));
+    typed(&mut ed, "x");
+    let snap = ed
+        .save_snapshot(doc, PathBuf::from("a.txt").as_path())
+        .unwrap();
+    assert_eq!(snap.text.to_string(), "xabc");
+    assert!(!snap.bom);
+    assert_eq!(snap.expected, None, "never on disk");
+    // Typed within the group pause while the save runs.
+    typed(&mut ed, "y");
+    assert_eq!(text(&ed, doc), "xyabc");
+    ed.saved_node(doc, PathBuf::from("a.txt"), snap.node, ok_saved(4));
+    assert!(
+        ed.document(doc).unwrap().is_modified(),
+        "the y typed during the save is not on disk"
+    );
+    // Undoing the y returns to exactly what was saved.
+    ed.handle(&alt('z'));
+    assert_eq!(text(&ed, doc), "xabc");
+    assert!(!ed.document(doc).unwrap().is_modified());
+    // The snapshot's expected disk state is the document's, for its path.
+    let snap = ed
+        .save_snapshot(doc, PathBuf::from("a.txt").as_path())
+        .unwrap();
+    assert_eq!(snap.expected.map(|d| d.size), Some(4));
+    let other = ed
+        .save_snapshot(doc, PathBuf::from("b.txt").as_path())
+        .unwrap();
+    assert_eq!(other.expected, None, "a new path must not exist yet");
+    let gone = ed.open(Text::from(""), None);
+    ed.close_document(gone).unwrap();
+    assert!(
+        ed.save_snapshot(gone, PathBuf::from("c").as_path())
+            .is_none()
+    );
+}
+
+/// Save then quit at once: the save is still running, but it writes
+/// exactly the current text, so quit waits for it instead of asking.
+#[test]
+fn quit_waits_for_a_save_of_the_current_text() {
+    let (mut ed, doc, _) = editor_with("abc", Some("a.txt"));
+    typed(&mut ed, "x");
+    let snap = ed
+        .save_snapshot(doc, PathBuf::from("a.txt").as_path())
+        .unwrap();
+    ed.handle(&ctrl('q'));
+    assert!(ed.prompt().is_none(), "no question");
+    assert!(!ed.should_quit(), "not before the save is done");
+    assert!(ed.message().contains("waiting"), "{}", ed.message());
+    ed.saved_node(doc, PathBuf::from("a.txt"), snap.node, ok_saved(4));
+    assert!(ed.should_quit());
+
+    // A failed save cancels the quit and says why.
+    let (mut ed, doc, _) = editor_with("abc", Some("a.txt"));
+    typed(&mut ed, "x");
+    let snap = ed
+        .save_snapshot(doc, PathBuf::from("a.txt").as_path())
+        .unwrap();
+    ed.handle(&ctrl('q'));
+    let err = SaveError::Io {
+        phase: crate::file::Phase::CreateTemp,
+        kind: std::io::ErrorKind::PermissionDenied,
+        message: "denied".into(),
+    };
+    ed.saved_node(doc, PathBuf::from("a.txt"), snap.node, Err(err));
+    assert!(!ed.should_quit());
+    assert!(ed.message().contains("denied"));
+    // Typing after the save started: the save no longer covers it, ask.
+    let snap = ed
+        .save_snapshot(doc, PathBuf::from("a.txt").as_path())
+        .unwrap();
+    typed(&mut ed, "y");
+    ed.handle(&ctrl('q'));
+    assert!(ed.prompt().is_some());
+    ed.handle(&plain(KeyCode::Esc));
+    ed.saved_node(doc, PathBuf::from("a.txt"), snap.node, ok_saved(5));
+    assert!(!ed.should_quit());
+}
+
 #[test]
 fn in_place_saves_and_errors_are_reported() {
     let (mut ed, doc, _) = editor_with("", Some("a.txt"));

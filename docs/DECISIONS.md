@@ -675,3 +675,294 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
 - **Reopen if:** a per-line layout cache (Stage 7 or soft wrap) can
   answer columns directly.
 
+
+## 026 — Stage 7 is gated three times
+
+- **Date:** 2026-11-17 (owner decision)
+- **Decision:** Stage 7 is delivered as 7a (commands, events, keymaps,
+  options and config, modes, multi-selection commands), 7b (search and
+  replace, soft wrap), and 7c (renderer benchmarks, themes, slow
+  output), each with its own report and approval. PLAN's Stage 7
+  acceptance list is split the same way.
+- **Why:** Stage 7 is about three normal stages of work; separate gates
+  give review points hours apart instead of one at the end.
+- **Reopen if:** the owner prefers to merge the remaining gates.
+
+## 027 — Commands: named, owned, run without keys
+
+- **Date:** 2026-11-17 (Stage 7a)
+- **Decision:** every action is a command in a registry on the editor:
+  `CommandId(u32)` never reused (a removed command leaves a tombstone),
+  a unique whitespace-free name, an `Owner`, a doc line, and an
+  `Arc<dyn Fn(&mut Editor, &Context) -> Effects>` body. `Context` is
+  `{ view, count, arg }`; commands never see keys. `run`/`run_named`
+  are the only ways in (keys, the `:` line, plugins). `remove_owner`
+  removes an owner's modes, key layers, commands, options, and hooks;
+  the built-in owner cannot be removed.
+- **Why:** PLAN 2.10/2.11: no privileged built-ins; Luau (Stage 11) only
+  adapts this API. Running a command clones an `Arc` (no allocation).
+- **Evidence:** `editor/command/tests.rs` (every built-in runs by name on
+  empty and non-empty documents, with and without a view).
+- **Reopen if:** commands need typed arguments beyond one string.
+
+## 028 — Keymaps: layers, a trie per mode, input-time sequences
+
+- **Date:** 2026-11-17 (Stage 7a)
+- **Decision:** Helix-style notation (`C-s`, `A-z`, `S-left`, `g g`);
+  a character key never carries Shift (`z` with Shift is `Z`). Each mode
+  has layers ranked user config > plugins (later owners higher) >
+  default config; `false` unbinds a lower layer's binding. Any change
+  recompiles that mode's trie (sorted children, binary search). The
+  pending sequence lives in the keymap; a key that does not continue it
+  starts over from the root; an ambiguous prefix's own action runs when
+  the next key does not continue it or arrives after
+  `sequence-timeout-ms` of input time (no timer events, so replay is
+  exact). Unbound printable keys are typed in modes with
+  `insert_unbound`; elsewhere an unbound key is reported on the status
+  line. `Editor::handle` handles no key itself.
+- **Why:** PLAN 2.11 (everything rebindable, no hard-coded keys) and the
+  allocation-free resolution PLAN Stage 7 asks for.
+- **Evidence:** `keymap/tests.rs` (a property test against a naive
+  buffer resolver), `tests/alloc.rs` (zero allocations resolving keys
+  and handling normal-mode motions), `mode/tests.rs`
+  (`without_the_default_keymap_no_key_does_anything`).
+- **Trade-off:** a lone ambiguous prefix waits for the next key (the
+  default keymap has none).
+
+## 029 — Modes and the block cursor
+
+- **Date:** 2026-11-17 (Stage 7a)
+- **Decision:** modes are data (`insert_unbound`, `min_grapheme`,
+  `extend`, a `cursor-shape-<mode>` option) held per view; built-ins
+  normal, insert, extend, prompt, and question. In a `min_grapheme` mode
+  the cursor is a grapheme: the last of a forward range, the first of a
+  backward one. Motions run from it: a move makes the range that
+  grapheme, an extend keeps the anchor grapheme. After every command
+  (and on entering such a mode, and when a view opens) every empty range
+  is widened to the grapheme after it, except at the end of the text
+  (PLAN 2.5). `w`/`b` select words with Kakoune's rule for progress.
+  `Editor::cursor_position` (the block's grapheme) drives scrolling, the
+  line anchor, the status column, and the terminal cursor. Insert mode
+  keeps every Stage 6 key, so the Stage 3–6 suites run in insert mode.
+  `O` is one edit (the new line and the cursor before it), so it undoes
+  with what is typed after it.
+- **Why:** PLAN 2.5 (D1, selection-first modal editing).
+- **Evidence:** `mode/tests.rs`; `random_events_never_panic` checks the
+  minimum after every event; the renderer's random test compares frames
+  with and without the anchor.
+- **Trade-off:** typing in normal mode via `insert-text` or `a`/`i`
+  follows the head; a paste in normal mode inserts at the head (after
+  the block).
+
+## 030 — Options and config: scopes, layers, field reads
+
+- **Date:** 2026-11-17 (Stage 7a)
+- **Decision:** typed, owned options resolved view → document → global
+  → default (PLAN's language scope arrives with languages in Stage 9).
+  Each view keeps a resolved `ViewOptions` (tab width, sequence timeout,
+  normal-mode minimum), recomputed whenever any value changes; the
+  undo-group pause is pushed into each document's history. Config is
+  TOML, walked by hand so every entry is checked alone and a bad one is
+  reported and skipped. The default keymap is `default-config.toml`,
+  embedded and applied through the same function into the default layer
+  (its `[options]` set defaults); the user's file is the user layer (its
+  `[options]` set globals) and a reload replaces that layer and the
+  global values as a whole. The binary reads the file (DECISIONS 020)
+  and re-applies `--tab-width` after each load. Traces record the
+  config's hash; `--replay` warns on a mismatch.
+- **Why:** PLAN 2.11.
+- **Evidence:** `config/tests.rs` (the PLAN acceptance config: rebind and
+  unbind in every mode, options at runtime; bad entries; reload
+  layering), `pty.rs` `a_config_file_binds_keys_and_reloads_at_runtime`.
+- **Trade-off:** a reload also clears global values set with `:set`.
+
+## 031 — Hooks: batches at the outermost call, bounded rounds
+
+- **Date:** 2026-11-17 (Stage 7a)
+- **Decision:** document-changed, selection-changed, mode-changed,
+  view-opened/closed events queue while the editor works and are
+  delivered when the outermost `handle` or `run` returns (or on
+  `flush_events`): each subscriber gets the whole batch once if it holds
+  a kind it wants. While subscribers run, nested calls queue rather than
+  deliver; events they raise go to at most 8 further rounds, then are
+  dropped with a message. Nothing is queued when there are no
+  subscribers. The built-in native consumer cancels a pending key
+  sequence and count when a view closes.
+- **Why:** PLAN Stage 7 (batch payloads, a native consumer so Stage 11
+  only adds a Luau adapter).
+- **Evidence:** `hooks/tests.rs`; the bound was missing in the first
+  version (a subscriber that ran a command delivered recursively) and
+  the round-limit test caught it.
+- **Trade-off:** ending the undo group on a mode change is done directly
+  in `set_mode`, not by a hook: a hook runs after the command, too late
+  for `o` (mode change and edit in one command). A deferred hook that
+  changed selections also ended other views' undo groups, so the
+  one-grapheme minimum for new views is applied synchronously too.
+
+## 032 — Regex over the rope for selection commands
+
+- **Date:** 2026-11-17 (Stage 7a)
+- **Decision:** `regex-cursor` 0.1.5 runs `regex-automata`'s meta engine
+  over the rope's chunks (`crate::search`), only inside each selection.
+  Select, split, keep, remove, split-lines, and rotate-primary; a
+  command that would leave no selection changes nothing and says so.
+- **Why:** PLAN Stage 7 names `regex-cursor`; matching stays linear in
+  the bytes searched whatever the pattern, and chunks never split a code
+  point, so Unicode classes and word boundaries work.
+- **Evidence:** `search.rs` (agrees with the `regex` crate on random
+  Unicode text), `select/tests.rs`.
+
+## 033 — Regex search: one cursor per search, not `find_iter`
+
+- **Date:** 2026-11-17 (Stage 7b carried fixes; found by the 4,096-case
+  property run with small rope leaves)
+- **Decision:** `Matcher::find_in` runs each search from a fresh cursor
+  placed on the chunk holding the search start (binary search over chunk
+  offsets), instead of regex-cursor's `find_iter`. After a non-empty
+  match the next search starts at its end; after an empty one, at the
+  next char, as `find_iter` does.
+- **Why:** regex-cursor 0.1.5's literal strategy (a pattern that is an
+  alternation of literals, e.g. `é|e\u{301}`) reads into the next chunk
+  to confirm a match and never moves the cursor back (`Pre::search` and
+  `literal::find` do not call `Input::move_to`, unlike the PikeVM and DFA
+  paths; `set_span` only moves forward). `find_iter`'s next search then
+  starts in the later chunk and misses a match that begins before it:
+  `"ée\u{301}"` split as `["ée", "\u{301}"]` found `[0..2]`, not
+  `[0..2, 2..5]`. Any file where such a match crosses a rope leaf
+  boundary was affected (select, split, keep, remove).
+- **Evidence:** `search.rs` `matches_across_every_chunk_split` (every
+  split of six strings; fails on `find_iter`), the property
+  `matches_regex_over_random_chunks` (fails on `find_iter` at 4,096
+  cases), and the committed regression seeds in
+  `proptest-regressions/search.txt`.
+- **Trade-off:** O(log chunks) per match to place the cursor; one more
+  `Vec` per call (chunk offsets).
+- **Reopen if:** regex-cursor repositions the cursor at the start of every
+  search (then `find_iter` is fine again; the tests above decide).
+
+## 034 — Undo groups are bounded by size
+
+- **Date:** 2026-11-17 (Stage 7b carried fixes; PLAN rev. 3 Appendix B 1)
+- **Decision:** a typing commit merges into the open group only while
+  the bytes the group's commits inserted and deleted stay within
+  `undo-group-max-bytes` (an option, default 64 KiB; 0 turns grouping
+  off). Past it, the commit starts a new node, which opens a new group.
+- **Why:** merging composes the whole group's change sets on every key, so
+  one unbroken run cost O(run) per key. Measured before, one run of keys
+  1 ms apart: 1.7 µs per key at 10,000 keys, 41 µs at 640,000 with a
+  28.7 ms worst key, 26 s in total. After: 1.7 / 2.4 / 2.7 / 2.7 µs per
+  key at 10k / 160k / 640k / 1M keys, worst 59 / 100 / 147 / 256 µs,
+  1.7 s for 640,000 keys.
+- **Evidence:** `a_long_typing_run_splits_at_the_group_size_bound`
+  (fails without the bound), `the_default_group_bound_keeps_ordinary_typing_in_one_node`,
+  the options test for the new option.
+- **Alternatives:** append to the head node's insert in place (no
+  re-composition at all, but only for the single-cursor, same-position
+  case, and a second code path for history); a key-count bound (does
+  not bound bytes).
+- **Trade-off:** typing more than 64 KiB without a pause undoes in
+  several steps.
+- **Reopen if:** an in-place merge for the common case shows a
+  measurable gain.
+
+## 035 — Hooks queue only kinds someone wants
+
+- **Date:** 2026-11-17 (Stage 7b carried fixes; amends 031)
+- **Decision:** the hook registry keeps the union of the live
+  subscribers' kinds; `emit` queues an event only if its kind is in it
+  (O(1); it used to scan the subscribers). A batch therefore holds only
+  kinds some subscriber wants, not every event of the call.
+- **Why:** the built-in view-closed consumer is always subscribed, so
+  "nothing is queued without subscribers" never held: every edit queued
+  and delivered a document and a selection event nobody wanted.
+- **Evidence:** `only_wanted_kinds_are_queued` (fails on the old `emit`);
+  `subscribers_get_only_batches_of_their_kinds` updated for the batch
+  contents.
+
+## 036 — Kitty keyboard flag, pushed without a query
+
+- **Date:** 2026-11-17 (Stage 7b carried fixes; PLAN rev. 3 2.9)
+- **Decision:** entering the terminal pushes the kitty protocol's
+  disambiguate-escape-codes flag; every restore path (quit, error,
+  panic, signals, suspend) pops it first, while still on the alternate
+  screen. The `kitty-keyboard` option (default on) turns it off; a config
+  reload pushes or pops at once.
+- **Why:** without it an escape sequence split across reads arrives as
+  Esc and literal keys, which in a modal editor leaves insert mode and
+  runs commands. No support query: crossterm's blocks for up to 2 s on a
+  terminal that does not answer.
+- **Evidence:** `flash-term` `terminal` tests (sequence order); pty
+  `the_keyboard_flag_is_pushed_and_a_config_turns_it_off`, and every pty
+  test now checks the flag is popped after the last push.
+- **Trade-off:** a terminal that misreads the private `CSI > 1 u` would
+  show it; not observed, and not tested on real terminals beyond the pty.
+- **Reopen if:** a terminal in use mishandles it (then query
+  asynchronously instead).
+
+## 037 — An event's time is when it was read
+
+- **Date:** 2026-11-17 (Stage 7b carried fixes; amends 018)
+- **Decision:** the frontend passes `handle_at` (and records as `t_ns`)
+  the time the input thread read the event, measured from the session
+  start, not the time the main loop dequeued it.
+- **Why:** after a stall on the main thread, dequeue times bunch up, so
+  undo grouping and key-sequence timeouts followed the stall, not the
+  typing.
+- **Evidence:** `latency::event_time_is_read_time_not_now`.
+
+## 038 — Saves and opens run on an I/O thread
+
+- **Date:** 2026-11-17 (Stage 7b carried fixes; amends 020)
+- **Decision:** the binary runs `Request::Save` and `Request::Open` on one
+  I/O worker thread (`apps/flash/src/io.rs`), in order; results return
+  through the main channel and are applied on the main thread. A save
+  writes an `Editor::save_snapshot` (O(1) text clone, BOM, expected disk
+  state, and the history node), which also closes the open undo group;
+  `Editor::saved_node` marks that node saved, so typing during the save
+  stays modified. A second save of a document still being saved waits
+  for the first. Quit treats a document whose head a running save is
+  writing as about to be saved: it waits (as `:wq` does) instead of
+  asking. On exit the loop waits up to 30 s for running jobs. If the
+  worker is gone, a job runs inline.
+- **Why:** 282 ms to save and 220 ms to load 100 MB were spent inside the
+  event loop.
+- **Evidence:** `io_tests.rs` (off-thread save, deferred second save
+  without a false conflict, open, exit waits for a running save; making
+  the second save start at once fails), `a_save_marks_its_snapshot_not_later_typing`
+  (fails without the checkpoint), `quit_waits_for_a_save_of_the_current_text`,
+  pty `a_large_save_does_not_block_typing` (32 MiB; keys typed after
+  Ctrl+S are drawn before "saved"; fails with the inline path).
+- **Trade-off:** a save's outcome arrives later; the status line says
+  "saving …" meanwhile. Replay still drops requests.
+- **Reopen if:** watching files or crash recovery need a different I/O
+  owner.
+
+## 039 — Measuring after idle, and bytes per frame
+
+- **Date:** 2026-11-17 (Stage 7b carried fixes; PLAN rev. 3 section 4)
+- **Decision:** `FLASH_BENCH_IDLE_US` makes the latency and editor
+  benches pause before each timed sample (`benches/common::idle`), and
+  their JSON says so (`idle_us`). The editor bench, the interactive log,
+  and replay report bytes written per frame (`frame_bytes`). Cells
+  changed per frame needs the cell grid of Stage 7c and is not measured
+  yet.
+- **Why:** the 7a pty run cost about ten times the hot loop for the same
+  work, and timing to `flush` cannot see what a frame costs the terminal.
+- **Evidence** (`apps/flash/benches/editor.rs`, release, same machine;
+  `bench/results/stage-7b-editor{,-idle}.jsonl`), ns p50 / p99, and frame
+  bytes p50:
+
+  | fixture, viewport | hot | idle 5 ms | frame bytes |
+  |---|---|---|---|
+  | small 80×24 | 25,212 / 45,391 | 178,117 / 420,105 | 666 |
+  | medium 80×24 | 41,692 / 103,668 | 256,663 / 665,793 | 823 |
+  | medium 200×60 | 73,792 / 176,399 | 372,600 / 811,076 | 1,746 |
+  | unicode 200×60 | 73,208 / 156,540 | 419,527 / 962,455 | 2,107 |
+
+  The same event costs 5–7× more after a 5 ms pause, close to the 7a
+  pty run's 280 µs p50: most of the gap between in-process benches and
+  the interactive path is the pause between keys (caches, CPU idle
+  states), not the input thread. The hot numbers match Stage 7a's.
+  Every frame is a full redraw, so a one-character edit writes about a
+  screen's worth of escapes and text; Stage 7c's renderer is judged
+  against these sizes.

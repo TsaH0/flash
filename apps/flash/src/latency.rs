@@ -1,4 +1,15 @@
-//! Latency summaries over per-event samples (nanoseconds).
+//! Latency summaries over per-event samples (nanoseconds), and event times.
+
+use std::time::Instant;
+
+/// An input event's time for the editor and the trace: nanoseconds from
+/// `session` to when the input thread *read* it (not when the main loop
+/// got to it), so a stall on the main thread cannot change undo grouping
+/// or key-sequence timeouts. An event read before the session started is
+/// at 0.
+pub fn event_time(session: Instant, read_at: Instant) -> u64 {
+    u64::try_from(read_at.saturating_duration_since(session).as_nanos()).unwrap_or(u64::MAX)
+}
 
 /// Percentiles of a set of samples. Percentile `p` is the sorted sample at
 /// index `floor(len · p)`, clamped, matching `flash-core`'s latency harness.
@@ -55,6 +66,9 @@ pub struct Timing {
     pub layout: u64,
     /// Writing and flushing the frame.
     pub flush: u64,
+    /// Bytes the frame wrote (0 without a frame): what the terminal still
+    /// has to parse and repaint after `flush` returns (PLAN section 4).
+    pub bytes: u64,
 }
 
 /// Timings of many events, summarised per stage.
@@ -98,6 +112,8 @@ impl Stages {
             ("layout", |t| t.layout),
             ("flush", |t| t.flush),
         ];
+        // Not a time: summarised in its own object after "stages".
+        let bytes = summarize(&pick(|t| t.bytes))?;
         for (i, (name, f)) in stages.into_iter().enumerate() {
             let s = summarize(&pick(f))?;
             if i > 0 {
@@ -108,7 +124,10 @@ impl Stages {
                 s.p50, s.p95, s.p99, s.max
             ));
         }
-        json.push_str("}}");
+        json.push_str(&format!(
+            r#"}},"frame_bytes":{{"p50":{},"p95":{},"p99":{},"max":{}}}}}"#,
+            bytes.p50, bytes.p95, bytes.p99, bytes.max
+        ));
         Some(json)
     }
 }
@@ -116,6 +135,16 @@ impl Stages {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn event_time_is_read_time_not_now() {
+        use std::time::Duration;
+        let session = Instant::now();
+        let read = session + Duration::from_millis(5);
+        // However late it is handled, the time is when it was read.
+        assert_eq!(event_time(session, read), 5_000_000);
+        assert_eq!(event_time(read, session), 0, "read before the session");
+    }
 
     #[test]
     fn summarize_percentiles() {
@@ -144,6 +173,7 @@ mod tests {
                 commit: 0,
                 layout: 20,
                 flush: 30,
+                bytes: 1000 * i,
             });
         }
         let json = st.to_json(r#""source":"t""#).unwrap();
@@ -153,7 +183,11 @@ mod tests {
         );
         assert!(json.contains(r#""stages":{"queue":{"p50_ns":3,"#), "{json}");
         assert!(
-            json.contains(r#""flush":{"p50_ns":30,"p95_ns":30,"p99_ns":30,"max_ns":30}}}"#),
+            json.contains(r#""flush":{"p50_ns":30,"p95_ns":30,"p99_ns":30,"max_ns":30}}"#),
+            "{json}"
+        );
+        assert!(
+            json.ends_with(r#","frame_bytes":{"p50":3000,"p95":4000,"p99":4000,"max":4000}}"#),
             "{json}"
         );
         assert_eq!(st.len(), 4);

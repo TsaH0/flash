@@ -53,7 +53,7 @@ mod select;
 
 pub use column::LineAnchor;
 pub use command::{CommandError, CommandFn, CommandId, CommandInfo, Commands, Context};
-pub use commands::Request;
+pub use commands::{Request, SaveSnapshot};
 pub use config::{ConfigError, DEFAULT_CONFIG};
 pub use event::{Event, KeyCode, KeyEvent, Modifiers};
 pub use hooks::{EditorEvent, EventKinds, HookFn, HookId, MAX_ROUNDS};
@@ -286,6 +286,7 @@ impl Editor {
     /// Adds `document`, applying the document-scoped options.
     pub(crate) fn insert_document(&mut self, mut document: Document) -> DocumentId {
         document.set_group_pause(self.group_pause(None));
+        document.set_group_max_bytes(self.group_max_bytes(None));
         self.documents.insert(document)
     }
 
@@ -300,6 +301,13 @@ impl Editor {
         match self.options.get(OptionId::UNDO_GROUP_PAUSE_MS, None, doc) {
             Some(OptionValue::Int(ms)) => Duration::from_millis(u64::try_from(ms).unwrap_or(0)),
             _ => History::DEFAULT_GROUP_PAUSE,
+        }
+    }
+
+    fn group_max_bytes(&self, doc: Option<DocumentId>) -> usize {
+        match self.options.get(OptionId::UNDO_GROUP_MAX_BYTES, None, doc) {
+            Some(OptionValue::Int(n)) => usize::try_from(n).unwrap_or(0),
+            _ => History::DEFAULT_GROUP_MAX_BYTES,
         }
     }
 
@@ -567,20 +575,22 @@ impl Editor {
         }
     }
 
-    /// Re-resolves every view's options and every document's group pause,
+    /// Re-resolves every view's options and every document's undo-group
+    /// pause and size bound,
     /// then re-scrolls the focused view (the tab width may have changed).
     pub(crate) fn refresh_options(&mut self) {
         for (id, view) in &mut self.views {
             view.options = self.options.resolve(Some(id), Some(view.doc));
         }
-        let pauses: Vec<(DocumentId, Duration)> = self
+        let groups: Vec<(DocumentId, Duration, usize)> = self
             .documents
             .keys()
-            .map(|d| (d, self.group_pause(Some(d))))
+            .map(|d| (d, self.group_pause(Some(d)), self.group_max_bytes(Some(d))))
             .collect();
-        for (d, pause) in pauses {
+        for (d, pause, max_bytes) in groups {
             if let Some(doc) = self.documents.get_mut(d) {
                 doc.set_group_pause(pause);
+                doc.set_group_max_bytes(max_bytes);
             }
         }
         if let Some(view) = self.focus {

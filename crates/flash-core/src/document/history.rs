@@ -20,6 +20,13 @@
 //! `inverse = compose(c⁻¹, inverse)`. The group closes on a commit without
 //! `group`, a selection change, a checkpoint, undo, redo, or a jump, so a
 //! merge only ever extends the newest node.
+//!
+//! A group also ends at a size bound: a commit merges only while the bytes
+//! the group's commits inserted and deleted stay within
+//! [`History::group_max_bytes`]. Composition rebuilds the group's change
+//! sets on every merge, so without the bound a key in an unbroken run (a
+//! paste without bracketed paste, a program typing) costs time
+//! proportional to everything typed before it in the run.
 
 use std::ops::{Index, IndexMut};
 use std::time::Duration;
@@ -255,6 +262,9 @@ pub struct History {
     /// node while set).
     open: Option<ViewId>,
     group_pause: Duration,
+    /// Bytes inserted and deleted by the open group's commits.
+    group_bytes: usize,
+    group_max_bytes: usize,
 }
 
 /// A change to the history, computed before the text changes and applied
@@ -269,6 +279,8 @@ pub(crate) enum Plan {
         inverse: ChangeSet,
         after: Selection,
         time: Timestamp,
+        /// The merged commit's [`edit_bytes`].
+        bytes: usize,
     },
     /// Add a child of the head and move there.
     Push {
@@ -279,6 +291,8 @@ pub(crate) enum Plan {
         time: Timestamp,
         view: ViewId,
         group: bool,
+        /// The commit's [`edit_bytes`].
+        bytes: usize,
     },
     /// Move the head along `path` (undo, redo, jump) to its last node.
     Move(Path),
@@ -301,6 +315,10 @@ impl History {
     /// An option from Stage 7 (PLAN 2.11, "undo-group pause").
     pub const DEFAULT_GROUP_PAUSE: Duration = Duration::from_secs(1);
 
+    /// Default bound on the bytes one undo group inserts and deletes
+    /// (option `undo-group-max-bytes`).
+    pub const DEFAULT_GROUP_MAX_BYTES: usize = 64 * 1024;
+
     /// A history whose root is a text of `len` bytes.
     pub(crate) fn new(len: usize) -> History {
         History {
@@ -317,6 +335,8 @@ impl History {
             head: NodeId::ROOT,
             open: None,
             group_pause: Self::DEFAULT_GROUP_PAUSE,
+            group_bytes: 0,
+            group_max_bytes: Self::DEFAULT_GROUP_MAX_BYTES,
         }
     }
 
@@ -358,6 +378,12 @@ impl History {
 
     pub fn group_pause(&self) -> Duration {
         self.group_pause
+    }
+
+    /// The most bytes one undo group may insert and delete; 0 turns
+    /// grouping off.
+    pub fn group_max_bytes(&self) -> usize {
+        self.group_max_bytes
     }
 
     /// The node `steps` before the head in creation order (Vim's
@@ -403,6 +429,10 @@ impl History {
         self.group_pause = pause;
     }
 
+    pub(crate) fn set_group_max_bytes(&mut self, max: usize) {
+        self.group_max_bytes = max;
+    }
+
     /// Closes the open undo group: the next commit starts a new node.
     pub(crate) fn close_group(&mut self) {
         self.open = None;
@@ -422,12 +452,16 @@ impl History {
     /// Invariant: while a group is open the head is the newest node (every
     /// move closes the group), so a merge never rewrites a node with
     /// children.
-    pub(crate) fn merges(&self, view: ViewId, record: Record) -> bool {
+    ///
+    /// `bytes` is the commit's [`edit_bytes`]: the merge must keep the
+    /// group within the size bound.
+    pub(crate) fn merges(&self, view: ViewId, record: Record, bytes: usize) -> bool {
         debug_assert!(self.open.is_none() || self.head.0 == self.nodes.len() - 1);
         let head = self.head_node();
         record.group
             && self.open == Some(view)
             && self.clamp(record.time).0 - head.time.0 <= nanos(self.group_pause)
+            && self.group_bytes.saturating_add(bytes) <= self.group_max_bytes
     }
 
     /// `time`, raised to the newest node's time so times never decrease.
@@ -477,7 +511,9 @@ impl History {
                 inverse,
                 after,
                 time,
+                bytes,
             } => {
+                self.group_bytes = self.group_bytes.saturating_add(bytes);
                 let head = &mut self.nodes[self.head.0];
                 head.forward = forward;
                 head.inverse = inverse;
@@ -492,7 +528,9 @@ impl History {
                 time,
                 view,
                 group,
+                bytes,
             } => {
+                self.group_bytes = bytes;
                 let id = NodeId(self.nodes.len());
                 let parent = self.head;
                 let depth = self.nodes[parent.0].depth + 1;
@@ -524,4 +562,18 @@ impl History {
             }
         }
     }
+}
+
+/// Bytes `changes` inserts and deletes: what merging it adds to an undo
+/// group's change sets.
+pub(crate) fn edit_bytes(changes: &ChangeSet) -> usize {
+    changes
+        .ops()
+        .iter()
+        .map(|op| match op {
+            Op::Retain(_) => 0,
+            Op::Delete(n) => *n,
+            Op::Insert(s) => s.len(),
+        })
+        .sum()
 }

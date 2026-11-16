@@ -34,7 +34,8 @@ use std::time::{Duration, Instant};
 
 use crossterm::event as ct;
 use crossterm::terminal;
-use flash_app::latency::{Stages, Timing};
+use flash_app::io::{Done, Io};
+use flash_app::latency::{Stages, Timing, event_time};
 use flash_app::requests::{self, Outcome, Settings};
 use flash_core::trace::{
     self, DEFAULT_MAX_LINE, TRACE_VERSION, TraceEntry, TraceHeader, TraceReader, TraceSource,
@@ -50,6 +51,9 @@ const USAGE: &str = "usage: flash [--config <file>] [--tab-width N] [file]\n    
 
 /// How long one batch may keep draining queued events before rendering.
 const DRAIN_BUDGET: Duration = Duration::from_millis(8);
+
+/// How long exit waits for a save still being written.
+const IO_EXIT_WAIT: Duration = Duration::from_secs(30);
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = env::args_os().skip(1).collect();
@@ -152,6 +156,8 @@ enum Msg {
     Input(ct::Event, Instant),
     InputError(io::Error),
     Signal(i32),
+    /// A save or open finished on the I/O worker.
+    Io(Done),
 }
 
 fn nanos(d: Duration) -> u64 {
@@ -199,7 +205,7 @@ fn run(path: Option<&Path>, settings: &Settings) -> Result<Exit, String> {
     let mut editor = Editor::new(width, height);
     let (_, config_hash) = requests::load_config(&mut editor, settings);
 
-    let mut recorder = match env::var_os("FLASH_TRACE") {
+    let recorder = match env::var_os("FLASH_TRACE") {
         Some(trace_path) => {
             let header = TraceHeader {
                 flash_trace: TRACE_VERSION,
@@ -223,6 +229,12 @@ fn run(path: Option<&Path>, settings: &Settings) -> Result<Exit, String> {
     editor.open_document(document);
 
     let (tx, rx) = mpsc::channel();
+    // Saves and opens run here, off the main loop (PLAN 2.8).
+    let mut io_worker = {
+        let tx = tx.clone();
+        Io::spawn(move |done| tx.send(Msg::Io(done)).is_ok())
+            .map_err(|e| format!("I/O thread: {e}"))?
+    };
     let mut signals = Signals::new([SIGTSTP, SIGCONT, SIGTERM, SIGHUP, SIGINT])
         .map_err(|e| format!("signal setup failed: {e}"))?;
     let signal_handle = signals.handle();
@@ -256,16 +268,29 @@ fn run(path: Option<&Path>, settings: &Settings) -> Result<Exit, String> {
     });
 
     let mut stages = Stages::default();
-    let mut trace_error = None;
+    let mut recording = Recording {
+        writer: recorder,
+        error: None,
+    };
     let result = event_loop(
         &mut editor,
         &rx,
+        &mut io_worker,
         &mut stages,
-        &mut recorder,
-        &mut trace_error,
+        &mut recording,
         settings,
     );
+    let Recording {
+        writer: recorder,
+        error: mut trace_error,
+    } = recording;
+    // A save still being written finishes before the process exits.
+    let busy = io_worker.busy();
+    let finished = io_worker.finish(IO_EXIT_WAIT);
     drop(guard);
+    if busy && !finished {
+        eprintln!("flash: a save was still running after {IO_EXIT_WAIT:?}; it may be incomplete");
+    }
     signal_handle.close();
 
     if let Some(writer) = recorder {
@@ -294,18 +319,21 @@ fn suspend() -> io::Result<()> {
     term::enter()
 }
 
+/// The trace being recorded (`FLASH_TRACE`), if any, and why recording
+/// stopped, if it did.
+struct Recording {
+    writer: Option<TraceWriter<BufWriter<File>>>,
+    error: Option<String>,
+}
+
 /// Writes `entries` to the trace (after the frame is flushed, so
 /// recording is not in the latency). A write error stops recording.
-fn record(
-    entries: &mut Vec<TraceEntry>,
-    recorder: &mut Option<TraceWriter<BufWriter<File>>>,
-    trace_error: &mut Option<String>,
-) {
-    if let Some(writer) = recorder {
+fn record(entries: &mut Vec<TraceEntry>, recording: &mut Recording) {
+    if let Some(writer) = &mut recording.writer {
         for entry in entries.iter() {
             if let Err(e) = writer.write(entry) {
-                *trace_error = Some(e.to_string());
-                *recorder = None;
+                recording.error = Some(e.to_string());
+                recording.writer = None;
                 break;
             }
         }
@@ -319,32 +347,32 @@ fn record(
 fn event_loop(
     editor: &mut Editor,
     rx: &Receiver<Msg>,
+    io_worker: &mut Io,
     stages: &mut Stages,
-    recorder: &mut Option<TraceWriter<BufWriter<File>>>,
-    trace_error: &mut Option<String>,
+    recording: &mut Recording,
     settings: &Settings,
 ) -> io::Result<Exit> {
     let mut entries: Vec<TraceEntry> = Vec::new();
     let result = run_loop(
         editor,
         rx,
+        io_worker,
         stages,
         &mut entries,
-        recorder,
-        trace_error,
+        recording,
         settings,
     );
-    record(&mut entries, recorder, trace_error);
+    record(&mut entries, recording);
     result
 }
 
 fn run_loop(
     editor: &mut Editor,
     rx: &Receiver<Msg>,
+    io_worker: &mut Io,
     stages: &mut Stages,
     entries: &mut Vec<TraceEntry>,
-    recorder: &mut Option<TraceWriter<BufWriter<File>>>,
-    trace_error: &mut Option<String>,
+    recording: &mut Recording,
     settings: &Settings,
 ) -> io::Result<Exit> {
     let session = Instant::now();
@@ -371,7 +399,8 @@ fn run_loop(
                 Msg::Input(raw, read_at) => {
                     let dequeued = Instant::now();
                     if let Some(event) = convert(&raw) {
-                        let t_ns = nanos(session.elapsed());
+                        // The time it was read, not now (PLAN 2.8).
+                        let t_ns = event_time(session, read_at);
                         let commits_before = editor.last_commit_ns();
                         let fx = editor.handle_at(&event, Timestamp::from_nanos(t_ns));
                         let commit = if fx.text && editor.last_commit_ns() != commits_before {
@@ -392,8 +421,16 @@ fn run_loop(
                 }
                 Msg::Signal(SIGCONT) => full_redraw = true,
                 Msg::Signal(sig) => return Ok(Exit::Signal(sig)),
+                Msg::Io(done) => redraw |= io_worker.complete(editor, done).needs_redraw(),
             }
             for request in editor.take_requests() {
+                let request = match io_worker.submit(editor, request) {
+                    Ok(fx) => {
+                        redraw |= fx.needs_redraw();
+                        continue;
+                    }
+                    Err(request) => request,
+                };
                 match requests::execute(editor, request, &mut out, settings)? {
                     Outcome::Done(fx) => redraw |= fx.needs_redraw(),
                     Outcome::Suspend => {
@@ -419,12 +456,13 @@ fn run_loop(
             // After a suspend the screen is the shell's: clear it all.
             crossterm::queue!(out, terminal::Clear(terminal::ClearType::All))?;
         }
-        let (mut layout, mut flush) = (0, 0);
+        let (mut layout, mut flush, mut bytes) = (0, 0, 0);
         if redraw || full_redraw {
             let last = stages.last().map_or(0, |t| t.total);
             let t0 = Instant::now();
             let frame = renderer.frame(editor, last);
             let t1 = Instant::now();
+            bytes = frame.len() as u64;
             out.write_all(frame)?;
             out.flush()?;
             layout = nanos(t1 - t0);
@@ -441,9 +479,10 @@ fn run_loop(
                 commit,
                 layout,
                 flush,
+                bytes,
             });
         }
-        record(entries, recorder, trace_error);
+        record(entries, recording);
     }
 }
 
@@ -503,10 +542,11 @@ fn replay(trace_path: &Path, config: Option<PathBuf>) -> Result<(), String> {
         let fx = editor.handle_at(&entry.event, Timestamp::from_nanos(entry.t_ns));
         editor.take_requests();
         let t1 = Instant::now();
-        let (mut layout, mut flush) = (0, 0);
+        let (mut layout, mut flush, mut bytes) = (0, 0, 0);
         if fx.needs_redraw() {
             let frame = renderer.frame(&editor, 0);
             let t2 = Instant::now();
+            bytes = frame.len() as u64;
             sink.extend_from_slice(frame);
             layout = nanos(t2 - t1);
             flush = nanos(t2.elapsed());
@@ -518,6 +558,7 @@ fn replay(trace_path: &Path, config: Option<PathBuf>) -> Result<(), String> {
             commit: if fx.text { editor.last_commit_ns() } else { 0 },
             layout,
             flush,
+            bytes,
         });
     }
     match stages.to_json(r#""source":"replay""#) {

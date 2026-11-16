@@ -1,9 +1,11 @@
-# FLASH — Master Engineering Plan (revision 2, final)
+# FLASH — Master Engineering Plan (revision 3)
 
 A fast, extensible Rust text editor built on the Crop rope, delivered in 11 gated stages.
 
-Revision 2 replaces the original 10-stage plan. What changed and why is listed in
-[Appendix A](#appendix-a--changes-from-revision-1).
+Revision 2 replaced the original 10-stage plan
+([Appendix A](#appendix-a--changes-from-revision-1)). Revision 3 (2026-11-17, after Stage 7a)
+folds in a review of the measured latency and the code so far; it changes Stage 7b onward and
+is listed in [Appendix B](#appendix-b--changes-from-revision-2).
 
 ---
 
@@ -71,7 +73,7 @@ Facts verified against the crop 0.4.3 source, which the wrapper must account for
 | No char-index metric; only bytes, lines, optional UTF-16 | Consistent with byte-offset coordinates. Char counts are derived by iterating a slice when needed. |
 | No multi-edit API; each edit is an independent O(log n) descent | ChangeSet application strategy (descending per-op edits vs. rebuild with `RopeBuilder`) is a benchmark question in Stage 2, with a crossover expected at high edit counts. |
 | `Rope::clone` is O(1) (shared tree); rope is `Send + Sync` | Snapshots for background workers are plain clones. No locking. |
-| `chunks()` is double-ended; there is no "chunk containing byte N" accessor | Tree-sitter and regex cursors use `byte_slice(n..).chunks()`. Measure the cost of that seek in Stage 9. |
+| `chunks()` is double-ended; there is no "chunk containing byte N" accessor | The vendored crop adds `Rope::chunk_at_byte` (O(log n), no allocation; DECISIONS 008). Tree-sitter's read callback and any other seek-by-offset reader use it, not `byte_slice(n..).chunks()`, which allocates a traversal stack per seek. |
 | Features: `graphemes` (unicode-segmentation), `utf16-metric`, `simd` (default) | Enable `graphemes` from Stage 1. Benchmark `utf16-metric` in Stage 1 (edit and build overhead) and record the result; enable it only when LSP lands if the overhead is acceptable, otherwise convert per line. |
 
 Do not build a custom rope. No `dyn` text trait on the hot path.
@@ -140,11 +142,39 @@ Plain threads and channels; no async runtime in `flash-core`. Workers receive `(
 clone)` and every result carries the revision it was computed against. Worker queues are bounded
 and "latest wins".
 
+Added in revision 3:
+
+- **The input thread is under review.** The Stage 7a pty run puts the hand-off from the input
+  thread to the main loop at 86 µs p50 of a 280 µs total: the largest stage after layout, and
+  pure wake-up cost. Stage 7c prototypes the alternative (the main thread blocks in one `poll`
+  over the terminal fd and a wake fd that workers and the signal handler write to, then drains
+  the channel) and measures both in the pty harness. Crossterm cannot add fds to its poll, so
+  the alternative replaces crossterm's input half; adopt it only if the measured gain repeats
+  and the parser is covered by tests. The single-owner, one-channel, drain-then-render policy
+  does not change either way.
+- **An event's time is when it was read**, not when the main loop dequeued it. The frontend
+  passes the read timestamp to `handle_at` and records it as the trace's `t_ns`, so a stall
+  on the main thread cannot change undo grouping or key-sequence timeouts.
+- **File I/O is not done on the main thread.** Save runs on a worker from an O(1) text
+  snapshot and reports back through the channel with the revision it saved (DECISIONS 020
+  already has this shape); opening a file loads on a worker. Measured cost of doing it inline:
+  282 ms to save and 220 ms to load 100 MB.
+
 ### 2.9 Terminal
 
 Crossterm. Custom renderer: cell grid, diff against previous frame, one buffered write per frame,
 synchronised-update escapes when supported. Synchronous output until measurements justify a writer
 thread. Bracketed paste is enabled and a paste is **one** transaction.
+
+The kitty keyboard protocol's disambiguate-escape-codes flag is enabled where the terminal
+supports it (pushed on enter, popped on restore, suspend, and panic). Without it an escape
+sequence split across reads arrives as Esc followed by literal keys, which in a modal editor
+leaves insert mode and runs commands. On terminals without it this stays a documented
+limitation.
+
+The grid composites more than one source from the start: several views (splits) and overlays
+(prompt, popups) draw into regions of one grid, and the diff runs over the result. The
+single-full-screen-view layout of Stages 3 to 7a is temporary.
 
 ### 2.10 Plugins
 
@@ -262,9 +292,22 @@ crash-recovery journal. Keep boundaries clean; build none of these in the 11 sta
 | Latency distributions (p50/p95/p99/max) over a replayed trace | Custom harness recording per-event nanoseconds into an HDR histogram |
 | Allocation counts and bytes on the hot path | Counting global allocator in bench and test builds |
 | Peak memory | Peak RSS from the trace harness, plus the allocator's high-water mark |
-| End-to-end terminal path | Trace replay with output written to a pty or sink, timed from event dequeue to `flush` returning |
+| End-to-end terminal path | Trace replay with output written to a pty or sink, timed from event read to `flush` returning |
+| Terminal-side cost of a frame | Bytes written per frame and cells changed per frame, recorded per event next to the timings |
+| Cost after idle | The latency harness's idle mode: a pause (default 5 ms) between samples, so each one starts with the caches and CPU state a real keystroke finds |
 
 True on-screen latency needs external hardware and is out of scope; do not report it.
+
+Two rules added in revision 3, both from the Stage 7a numbers:
+
+- **`flush` returning is not the end of a frame's cost.** It measures the kernel copy; the
+  terminal still has to parse the bytes and repaint what they touch. Renderer alternatives are
+  therefore compared on bytes and cells per frame first, and on CPU time second. A renderer
+  that is faster to build but writes a full screen per key is not the winner.
+- **The pty run is the reference; hot loops are for finding regressions.** A key costs 3.5 µs
+  in the hot-loop harness and 45 µs in the pty run (commit: 3.3 µs against 16.6 µs). Stage
+  reports quote the pty and idle-mode numbers against the targets below, and use hot-loop
+  numbers only to compare one stage with the last.
 
 ### Fixtures (generated deterministically, created in Stage 1)
 
@@ -282,7 +325,11 @@ O(line length); it must be slow-but-bounded, never a hang.
   re-renders only what changed.
 - 1,000 cursors: one edit stays inside a frame (under 16 ms); 10,000 cursors is measured and
   reported.
-- No hot-path stall caused by parsing, LSP, or plugins.
+- No hot-path stall caused by parsing, LSP, plugins, or file I/O.
+- A cursor-only move writes tens of bytes, not a screen; a single-character edit writes about
+  one line's worth.
+- The cost of a key does not grow with how long the session, the undo group, or the history
+  has become.
 
 Results are stored as JSON under `bench/results/` with machine, commit, and build settings, so
 each stage can be compared with the last. Treat single runs as noise; a regression is real when it
@@ -414,6 +461,11 @@ subsystem (history, markers, highlighting, plugins) is added to it as it lands.
   mapping behave exactly as for ordinary edits.
 - Measure bytes per history node over a long typing trace; add a cap with oldest-leaf pruning
   only if the measurement asks for it.
+- *(Revision 3, fixed in Stage 7b.)* Merging by composition rebuilds the whole group's change
+  set on every key, so a key costs O(group size): measured 1.7 µs per key at 10,000 keys in
+  one group, 41 µs at 640,000 with a 28.7 ms worst key, 26 s in total. A group therefore also
+  ends at a size bound (an option, default 64 KB of inserted text), or the merge appends to
+  the head node in place; either way a test bounds the per-key cost of one long unbroken run.
 
 **Tests**: undo all / redo all returns exact text; Unicode replacements; multi-cursor; multiple
 views; branch and return; random edit/undo/redo/branch walks against a model that stores full
@@ -451,6 +503,10 @@ This is atomic saving, not crash recovery.
 
 ### Stage 7 — Commands, keymaps, modes, events, fast rendering
 
+Delivered in three gates (DECISIONS 026): 7a (commands, events, keymaps, options and config,
+modes, multi-selection commands; complete), 7b, and 7c. The list under **Build** is the
+original scope; the revision 3 additions to 7b and 7c follow it.
+
 **Build**
 
 - **Command registry**: `CommandId(u32)`, semantic names, each registration has an owner and can
@@ -478,11 +534,48 @@ This is atomic saving, not crash recovery.
 - **Slow output**: measure against a throttled pty. Add a writer thread only if it shows a
   responsiveness gain; if added, it diffs against the last frame actually emitted.
 
+**Stage 7b, revision 3.** Before search and soft wrap, in this order:
+
+1. *Carried fixes*, one subtask, each with a regression test. **Done 2026-11-17**
+   (DECISIONS 033–039), uncommitted pending review:
+   - regex search missing matches that cross a rope chunk boundary (found by the gate's
+     4,096-case run after revision 3 was written; DECISIONS 033);
+   - the undo-group size bound (Stage 5 note; DECISIONS 034);
+   - event time taken at read (2.8; DECISIONS 037);
+   - hooks keep a mask of the kinds anyone subscribes to, and nothing is queued for a kind
+     nobody wants (DECISIONS 035);
+   - the kitty keyboard flag (2.9; DECISIONS 036);
+   - save and open on a worker (2.8; DECISIONS 038). The pty test uses a 32 MiB file
+     rather than 100 MB to keep the suite fast; the property it checks (keys typed after
+     Ctrl+S are drawn before the save reports back) does not depend on the size;
+   - the idle mode of the latency harness and the bytes-per-frame counter (section 4;
+     DECISIONS 039). The cells-per-frame counter moves to 7c, which builds the cell grid
+     it counts.
+2. *Display-line layout cache*, before soft wrap is built on anything else: per visible line,
+   keyed by the line's content revision, tab width, and wrap width, giving its display rows
+   and the byte offset ↔ display column mapping. Soft wrap, horizontal scroll, vertical
+   motion, the status column, and the renderer all read it. It replaces the `LineAnchor`
+   checkpoints (DECISIONS 025), which answer the same question for the primary head only;
+   the 1 MB single-line fixture must stay at or below its current per-key cost.
+3. Search and replace, and soft wrap, as listed above.
+
+**Stage 7c, revision 3.**
+
+- The cells-per-frame counter (moved from 7b: it needs the grid).
+- The renderer comparison is decided by bytes and cells per frame first (section 4). The
+  status line's latency readout becomes an option, off by default, so an idle frame is empty.
+- The grid composites views and overlays (2.9); a second view on screen is part of the
+  renderer's tests even though split commands may come later.
+- The input-thread experiment (2.8), reported with pty numbers for both designs.
+
 **Accept when**: a test config rebinds and unbinds default keys in every mode and changes
 options at runtime without restart; no key is hard-coded in Rust; commands run independently of
 keys; modal keymaps work; key resolution is
 allocation-free and benchmarked; renderer choices are backed by numbers; search works on
-`medium` without blocking input.
+`medium` without blocking input. Revision 3 adds: one unbroken typing run of 1,000,000 keys
+keeps a bounded per-key cost; a 100 MB save does not delay a key; a cursor-only move and a
+single-character edit meet the byte targets in section 4; the input-thread decision is
+recorded in DECISIONS with both sets of numbers.
 
 ### Stage 8 — Markers and decorations
 
@@ -509,10 +602,14 @@ Recomputable syntax highlights are render cache, not markers.
 - Tree-sitter: a small set of statically linked grammars; language detection by extension and
   first line; `InputEdit`s computed on the main thread at commit time (they need both pre-edit
   and post-edit row/column, which only the committing thread has cheaply); parsing in a worker
-  from rope chunks with a cancellation flag; old tree reused.
+  from rope chunks (`chunk_at_byte`, 2.3) with a cancellation flag; old tree reused.
 - Highlighting: query only the visible range plus a margin; cache per (document revision,
   line range, theme). On edit, keep existing styles for unaffected lines, shift them for the
-  edited line as provisional, replace when the up-to-date parse arrives.
+  edited line as provisional, replace when the up-to-date parse arrives. **The queries run in
+  the worker too**, which returns style spans per line for the requested range; the main
+  thread only reads the cache and shifts spans. It never runs a Tree-sitter query, at render
+  time or otherwise. Scrolling to lines with no cached spans draws them unstyled and
+  requests them.
 - Stress: edit continuously while `large` reparses; several revisions land before one parse
   finishes; saturated queues.
 
@@ -569,7 +666,9 @@ stale proposed edit rejected, state cleanup, standing benchmark with plugins ena
   applied transaction; no stale async result applied; no dangling registration; no reachable
   panic from external input.
 - **Performance**: no full-document scan or copy on ordinary editing or cursor motion; no
-  unbounded queue; no blocking call on the input path; no allocation in key resolution.
+  unbounded queue; no blocking call on the input path, file I/O included; no allocation in
+  key resolution; no per-key cost that grows with session, group, or history length; no
+  full-screen write for a change that touches a few cells.
 - **Maintainability**: explicit ownership, no `Rc<RefCell>` state graph, no global mutable
   state, documented invariants, traits only where there are two real implementations.
 
@@ -631,3 +730,38 @@ foundations only on reproducible evidence.
     everything above the core invariants configurable, with defaults defined as configuration
     (2.11); three-tier extensibility with Luau as the scripting language, chosen on latency
     after comparing QuickJS, Steel, and WASM (2.10).
+
+## Appendix B — Changes from revision 2
+
+Made 2026-11-17 after Stage 7a, from a review of the code and the recorded numbers. Stages 1
+to 7a are not reopened except for the carried fixes in Stage 7b.
+
+1. **Undo-group merge is O(group size) per key** (Stage 5 note, fixed in 7b). Measured with
+   one unbroken run of keys 1 ms apart: 1.7 µs per key at 10,000 keys, 41 µs at 640,000,
+   worst key 28.7 ms. Reached by a paste through a terminal without bracketed paste, or by
+   anything that types without pausing.
+2. **The input thread is put to a measurement** (2.8, Stage 7c). Its hand-off is 86 µs p50 of
+   280 µs in the 7a pty run. Not decided: replacing crossterm's input half has a real cost.
+3. **Renderer choices are judged on bytes and cells per frame** (section 4, Stage 7c). Timing
+   to `flush` returning cannot see what a full-screen write costs the terminal, and on CPU
+   time alone a full redraw can beat a diff.
+4. **The pty run and an idle-mode harness are the reference** (section 4). Hot-loop numbers
+   were about ten times lower than the pty run for the same work.
+5. **File I/O leaves the main thread** (2.8, Stage 7b): 282 ms to save and 220 ms to load
+   100 MB were being spent inside the event loop.
+6. **Event time is read time** (2.8). It was the dequeue time.
+7. **Kitty keyboard protocol where supported** (2.9), against split escape sequences.
+8. **Hooks filter by subscribed kinds** (Stage 7b). "Nothing is queued without subscribers"
+   was defeated by the built-in subscriber.
+9. **A display-line layout cache precedes soft wrap** (Stage 7b) and replaces the
+   primary-head-only `LineAnchor` checkpoints.
+10. **The cell grid composites views and overlays** (2.9, Stage 7c). The plan had no place
+    where splits or popups met the renderer before Stage 10.
+11. **Highlight queries run in the worker** (Stage 9), and Tree-sitter reads the rope through
+    `chunk_at_byte` (2.3).
+12. **New targets and quality-bar lines** (sections 4 and 6): bytes written per kind of
+    change, and no per-key cost that grows with session length.
+
+Not changed, and still open for the owner: the stage gate's independent review (section 3,
+step 3) was waived for Stages 3 to 5 and has not run for 6 and 7a. Item 1 was found by a
+fresh reading in minutes; running that review before 7b is recommended.

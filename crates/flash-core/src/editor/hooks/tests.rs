@@ -88,13 +88,23 @@ fn subscribers_get_only_batches_of_their_kinds() {
     ed.close_view(second).unwrap();
     assert!(views.take().is_empty(), "direct calls wait for a flush");
     ed.flush_events();
-    // The whole batch: opening in normal mode widened the new cursor.
+    // The whole batch, minus kinds nobody subscribes to: opening in normal
+    // mode widened the new cursor, but no one wants selection events.
     assert_eq!(
         views.take(),
         [vec![
             EditorEvent::ViewOpened { view: second },
-            EditorEvent::SelectionChanged { view: second },
             EditorEvent::ViewClosed { view: second },
+        ]]
+    );
+    let (_sels, _) = record(&mut ed, EventKinds::SELECTION, Owner(3));
+    let third = ed.open_view(doc).unwrap();
+    ed.flush_events();
+    assert_eq!(
+        views.take(),
+        [vec![
+            EditorEvent::ViewOpened { view: third },
+            EditorEvent::SelectionChanged { view: third },
         ]]
     );
 }
@@ -181,4 +191,32 @@ fn direct_api_calls_queue_until_flushed() {
     let (mut quiet, _, _) = editor("abc");
     quiet.handle(&key(KeyCode::Char('x')));
     assert!(quiet.hooks.queue.is_empty());
+}
+
+/// Only kinds someone subscribes to are queued: the built-in view
+/// subscriber must not make every edit queue document and selection events.
+#[test]
+fn only_wanted_kinds_are_queued() {
+    let (mut ed, _, view) = editor("abc");
+    let edit = |ed: &mut Editor| {
+        let sel = ed.selection(view).unwrap().clone();
+        let doc = ed.view(view).unwrap().doc();
+        let txn = Transaction::insert(ed.document(doc).unwrap().text(), &sel, "x").unwrap();
+        ed.commit(view, txn).unwrap();
+    };
+    edit(&mut ed);
+    assert!(ed.hooks.queue.is_empty(), "{:?}", ed.hooks.queue);
+    let (log, id) = record(&mut ed, EventKinds::SELECTION, Owner(3));
+    edit(&mut ed);
+    assert_eq!(ed.hooks.queue, [EditorEvent::SelectionChanged { view }]);
+    ed.flush_events();
+    assert_eq!(log.take().len(), 1);
+    assert!(ed.unsubscribe(id));
+    edit(&mut ed);
+    assert!(ed.hooks.queue.is_empty());
+    // Removing an owner forgets its kinds too.
+    let _ = record(&mut ed, EventKinds::DOCUMENT, Owner(4));
+    ed.remove_owner(Owner(4));
+    edit(&mut ed);
+    assert!(ed.hooks.queue.is_empty());
 }

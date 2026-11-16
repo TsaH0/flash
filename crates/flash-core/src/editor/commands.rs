@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 
 use super::prompt::{Prompt, PromptKind};
 use super::{Context, DocumentId, Editor, EditorError, Effects, OptionError, Scope, ViewId};
-use crate::document::Document;
-use crate::file::{LoadError, Loaded, SaveError, SaveMethod, Saved};
+use crate::document::{Document, NodeId};
+use crate::file::{DiskState, LoadError, Loaded, SaveError, SaveMethod, Saved};
 use crate::text::Text;
 use crate::transaction::Transaction;
 
@@ -36,6 +36,23 @@ pub enum Request {
     /// Read the user's config file again and pass it to
     /// [`Editor::load_config`].
     LoadConfig,
+}
+
+/// What a save off the main thread writes: taken by
+/// [`Editor::save_snapshot`] when the save starts, reported back with
+/// [`Editor::saved_node`].
+#[derive(Debug, Clone)]
+pub struct SaveSnapshot {
+    /// The text to write (an O(1) snapshot; `Send`).
+    pub text: Text,
+    /// Whether to write a UTF-8 BOM.
+    pub bom: bool,
+    /// The disk state the conflict check compares against: the document's,
+    /// if `path` is where it was loaded from or last saved to; `None` for a
+    /// new path (which must not exist yet).
+    pub expected: Option<DiskState>,
+    /// The history node whose text this is.
+    pub node: NodeId,
 }
 
 fn display(path: &Path) -> String {
@@ -63,24 +80,62 @@ impl Editor {
         }
     }
 
-    /// Reports the outcome of a [`Request::Save`] of `doc` to `path`. On
-    /// success the document records the path and disk state and is no
-    /// longer modified. A [`SaveError::Conflict`] asks whether to
-    /// overwrite. The message says what happened (including an in-place
-    /// save).
+    /// Starts saving `doc` to `path`: the text, BOM, and expected disk
+    /// state to hand to `file::save` on another thread. Ends the open undo
+    /// group, so typing during the save starts a new node and the snapshot's
+    /// node keeps exactly the text being written. `None` if `doc` is gone.
+    pub fn save_snapshot(&mut self, doc: DocumentId, path: &Path) -> Option<SaveSnapshot> {
+        let d = self.documents.get_mut(doc)?;
+        d.checkpoint();
+        d.set_saving(Some(d.history().head()));
+        Some(SaveSnapshot {
+            text: d.text().clone(),
+            bom: d.bom(),
+            expected: if d.path() == Some(path) {
+                d.disk().copied()
+            } else {
+                None
+            },
+            node: d.history().head(),
+        })
+    }
+
+    /// Reports the outcome of a [`Request::Save`] of `doc` to `path`,
+    /// written from the current text (a save done synchronously). See
+    /// [`Editor::saved_node`].
     pub fn saved(
         &mut self,
         doc: DocumentId,
         path: PathBuf,
         result: Result<Saved, SaveError>,
     ) -> Effects {
+        let Some(node) = self.documents.get(doc).map(|d| d.history().head()) else {
+            // Closed while saving: the file is written, nothing to record.
+            return Effects::default();
+        };
+        self.saved_node(doc, path, node, result)
+    }
+
+    /// Reports the outcome of saving history node `node`'s text of `doc`
+    /// to `path` (from a [`SaveSnapshot`]). On success the document
+    /// records the path and disk state, and is unmodified while its head is
+    /// `node`. A [`SaveError::Conflict`] asks whether to overwrite. The
+    /// message says what happened (including an in-place save).
+    pub fn saved_node(
+        &mut self,
+        doc: DocumentId,
+        path: PathBuf,
+        node: NodeId,
+        result: Result<Saved, SaveError>,
+    ) -> Effects {
         let Some(document) = self.documents.get_mut(doc) else {
             // Closed while saving: the file is written, nothing to record.
             return Effects::default();
         };
+        document.set_saving(None);
         let message = match result {
             Ok(saved) => {
-                document.mark_saved(path.clone(), saved.disk);
+                document.mark_saved_node(path.clone(), saved.disk, node);
                 let how = match saved.method {
                     SaveMethod::Atomic => String::new(),
                     SaveMethod::InPlaceHardLinks(n) => {
@@ -194,9 +249,21 @@ impl Editor {
     }
 
     /// Quits, asking first if any document is modified.
+    ///
+    /// A modified document whose current text a save in progress is
+    /// writing does not count: quit waits for that save (and asks or quits
+    /// when it reports back, as `:wq` does).
     pub(crate) fn quit_command(&mut self) -> Effects {
-        let modified = self.documents.values().filter(|d| d.is_modified()).count();
+        let modified = self
+            .documents
+            .values()
+            .filter(|d| d.is_modified() && !d.is_being_saved())
+            .count();
         if modified == 0 {
+            if self.documents.values().any(|d| d.is_modified()) {
+                self.quit_after_save = true;
+                return self.notify("waiting for the save to finish before quitting");
+            }
             return self.quit_now();
         }
         let s = if modified == 1 { "" } else { "s" };

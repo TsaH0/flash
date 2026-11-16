@@ -5,7 +5,28 @@
 
 #![allow(dead_code, reason = "each bench target uses a subset")]
 
+use std::time::Duration;
+
 use flash_core::Text;
+
+/// The idle mode (PLAN section 4, "cost after idle"): with
+/// `FLASH_BENCH_IDLE_US=<µs>` set, harnesses pause this long before each
+/// timed sample, so every sample starts with the caches and CPU state a
+/// real keystroke finds after a pause, not those of a hot loop. Unset or
+/// 0: no pause.
+pub fn idle() -> Option<Duration> {
+    let us: u64 = std::env::var("FLASH_BENCH_IDLE_US")
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    (us > 0).then(|| Duration::from_micros(us))
+}
+
+/// The idle field for JSON output: `,"idle_us":N` or empty.
+pub fn idle_json() -> String {
+    idle().map_or_else(String::new, |d| format!(r#","idle_us":{}"#, d.as_micros()))
+}
 
 /// SplitMix64: tiny, deterministic, good enough for picking offsets.
 pub struct Rng(u64);

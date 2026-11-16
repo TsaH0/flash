@@ -170,8 +170,17 @@ impl Session {
             out.rfind("\u{1b}[0 q").expect("reset the cursor shape") > entered,
             "cursor shape"
         );
+        // The keyboard protocol flag, if pushed, is popped after the last
+        // push and before leaving the alternate screen.
+        if let Some(pushed) = out.rfind(KITTY_PUSH) {
+            let popped = out.rfind(KITTY_POP).expect("popped the keyboard flag");
+            assert!(pushed < popped && popped < left, "keyboard flag order");
+        }
     }
 }
+
+const KITTY_PUSH: &str = "\u{1b}[>1u";
+const KITTY_POP: &str = "\u{1b}[<1u";
 
 fn kill(signal: &str, pid: u32) {
     let status = Command::new("kill")
@@ -250,6 +259,58 @@ fn sigterm_restores_the_terminal() {
 }
 
 #[test]
+fn the_keyboard_flag_is_pushed_and_a_config_turns_it_off() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    fs::write(&config, "").unwrap();
+    let mut s = Session::start(&[Path::new("--config"), &config], &[]);
+    s.wait_ready();
+    assert!(s.text().contains(KITTY_PUSH), "pushed by default");
+    // Turned off by a reload: popped at once.
+    fs::write(&config, "[options]\nkitty-keyboard = false\n").unwrap();
+    s.send(b":config-reload\r");
+    s.wait_until("the pop", |s| s.text().contains(KITTY_POP));
+    s.send(b"\x11");
+    assert!(s.wait_exit().success());
+    s.assert_restored();
+    assert_eq!(s.text().matches(KITTY_POP).count(), 1, "popped once");
+
+    // Off from the start: never pushed.
+    let mut s = Session::start(&[Path::new("--config"), &config], &[]);
+    s.wait_ready();
+    s.send(b"\x11");
+    assert!(s.wait_exit().success());
+    assert!(!s.text().contains(KITTY_PUSH));
+    s.assert_restored();
+}
+
+/// Saving runs off the main loop (PLAN 2.8): keys typed right after
+/// Ctrl+S on a large file are drawn before the save reports back, and
+/// quitting waits for the save instead of asking.
+#[test]
+fn a_large_save_does_not_block_typing() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = dir.path().join("big.txt");
+    let line = "0123456789 abcdefghij 0123456789 abcdefghij 0123456789 abcdefg\n";
+    fs::write(&doc, line.repeat(1 << 19)).unwrap(); // 32 MiB
+    let mut s = Session::start(&[&doc], &[]);
+    s.wait_ready();
+    s.send(b"i\x13QQQQ");
+    s.wait_until("the save", |s| s.text().contains("saved "));
+    let out = s.text();
+    let typed = out.find("QQQQ").expect("the typed keys were drawn");
+    let saved = out.find("saved ").unwrap();
+    assert!(typed < saved, "keys waited for the save");
+    // Save the QQQQ, then quit at once: no "quit anyway" question.
+    s.send(b"\x13\x11");
+    let status = s.wait_exit();
+    assert!(status.success(), "{status:?}: {}", s.stderr());
+    assert!(!s.text().contains("quit anyway"));
+    assert!(fs::read_to_string(&doc).unwrap().starts_with("QQQQ0123"));
+    s.assert_restored();
+}
+
+#[test]
 fn ctrl_z_suspends_and_continuing_resumes() {
     let mut s = Session::start(&[], &[]);
     s.wait_ready();
@@ -260,6 +321,10 @@ fn ctrl_z_suspends_and_continuing_resumes() {
     assert_eq!(s.modes(), s.original);
     let left = s.text().rfind("\u{1b}[?1049l");
     assert!(left.is_some(), "left the alternate screen before stopping");
+    assert!(
+        s.text().rfind(KITTY_POP).is_some_and(|p| Some(p) < left),
+        "popped the keyboard flag before stopping"
+    );
     kill("CONT", pid);
     s.wait_until("resume", |s| state(pid) != 'T' && s.raw());
     // Back on the alternate screen, redrawn, and still working.

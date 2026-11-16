@@ -5,7 +5,9 @@
 //! change, and delivers them when the outermost [`Editor::handle`] or
 //! [`Editor::run`] returns (or on [`Editor::flush_events`] after direct
 //! API calls). Each subscriber gets the whole batch, once, if it holds any
-//! kind it asked for. Events raised by subscribers are delivered in
+//! kind it asked for. Only kinds some subscriber wants are queued at all,
+//! so an edit costs nothing here while nobody listens for edits. Events
+//! raised by subscribers are delivered in
 //! further rounds, at most [`MAX_ROUNDS`]; the rest are dropped and the
 //! message says so, so hooks cannot recurse without bound.
 //!
@@ -66,7 +68,7 @@ impl EditorEvent {
 }
 
 /// A set of event kinds a subscriber wants.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct EventKinds(u8);
 
 impl EventKinds {
@@ -75,6 +77,7 @@ impl EventKinds {
     pub const MODE: EventKinds = EventKinds(4);
     pub const VIEW: EventKinds = EventKinds(8);
     pub const ALL: EventKinds = EventKinds(15);
+    pub const NONE: EventKinds = EventKinds(0);
 
     pub fn contains(self, other: EventKinds) -> bool {
         self.0 & other.0 == other.0
@@ -113,6 +116,8 @@ pub(crate) struct Hooks {
     pub(crate) queue: Vec<EditorEvent>,
     /// Nesting of `handle`/`run`; delivery happens when it returns to 0.
     pub(crate) depth: u32,
+    /// The kinds some live subscriber wants: only these are queued.
+    wanted: EventKinds,
 }
 
 impl fmt::Debug for Hooks {
@@ -131,6 +136,15 @@ impl Hooks {
                 *slot = None;
             }
         }
+        self.recompute_wanted();
+    }
+
+    fn recompute_wanted(&mut self) {
+        self.wanted = self
+            .subs
+            .iter()
+            .flatten()
+            .fold(EventKinds::NONE, |k, s| k | s.kinds);
     }
 }
 
@@ -148,21 +162,25 @@ impl Editor {
             kinds,
             run: Arc::new(run),
         }));
+        self.hooks.wanted = self.hooks.wanted | kinds;
         id
     }
 
     /// Ends a subscription. `false` if it was not live.
     pub fn unsubscribe(&mut self, id: HookId) -> bool {
-        self.hooks
+        let removed = self
+            .hooks
             .subs
             .get_mut(id.0 as usize)
             .and_then(Option::take)
-            .is_some()
+            .is_some();
+        self.hooks.recompute_wanted();
+        removed
     }
 
-    /// Queues `event` for the subscribers (nothing if there are none).
+    /// Queues `event` if some subscriber wants its kind. O(1).
     pub(crate) fn emit(&mut self, event: EditorEvent) {
-        if self.hooks.subs.iter().any(Option::is_some) {
+        if self.hooks.wanted.intersects(event.kind()) {
             self.hooks.queue.push(event);
         }
     }
@@ -194,9 +212,7 @@ impl Editor {
                 return fx;
             }
             let batch = std::mem::take(&mut self.hooks.queue);
-            let kinds = batch
-                .iter()
-                .fold(EventKinds(0), |k, e| EventKinds(k.0 | e.kind().0));
+            let kinds = batch.iter().fold(EventKinds::NONE, |k, e| k | e.kind());
             for i in 0..self.hooks.subs.len() {
                 let body = match self.hooks.subs.get(i) {
                     Some(Some(s)) if s.kinds.intersects(kinds) => Arc::clone(&s.run),
