@@ -171,6 +171,11 @@ impl ChangeSet {
     pub fn is_identity(&self) -> bool {
         self.ops.iter().all(|op| matches!(op, Op::Retain(_)))
     }
+
+    /// Allocated op slots (for memory accounting).
+    pub(crate) fn ops_capacity(&self) -> usize {
+        self.ops.capacity()
+    }
 }
 
 /// Error returned by change set construction, validation, and algebra.

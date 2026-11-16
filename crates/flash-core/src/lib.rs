@@ -1,8 +1,8 @@
 //! Flash editing core.
 //!
-//! Text storage and the change set algebra now; documents, history, and the
-//! headless editor arrive in later stages. This crate is independent of any terminal,
-//! GUI, or plugin runtime.
+//! Text storage, the change set algebra, selections and transactions,
+//! documents with branching history, and the headless editor. This crate is
+//! independent of any terminal, GUI, or plugin runtime.
 
 #![forbid(unsafe_code)]
 
@@ -26,7 +26,10 @@ pub mod fuzzing;
 pub mod internals;
 
 pub use changeset::{Assoc, ChangeSet, ChangeSetBuilder, ChangeSetError, Op};
-pub use document::{CommitError, Document, LineEnding, MapError, Revision, RevisionLog};
+pub use document::{
+    CommitError, Document, History, LineEnding, MapError, Node, NodeId, Record, Revision,
+    RevisionLog, Timestamp,
+};
 pub use editor::{
     DocumentId, Editor, EditorError, Effects, Event, KeyCode, KeyEvent, Modifiers, View, ViewId,
 };

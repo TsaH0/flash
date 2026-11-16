@@ -190,6 +190,15 @@ impl Selection {
         Selection::single(*self.primary())
     }
 
+    /// Heap bytes held (zero for one range, which is stored inline).
+    pub(crate) fn heap_bytes(&self) -> usize {
+        if self.ranges.spilled() {
+            self.ranges.capacity() * size_of::<Range>()
+        } else {
+            0
+        }
+    }
+
     /// Checks that every endpoint is a valid position in `text` (in bounds
     /// and on a char boundary). Returns the first problem, checking each
     /// range's anchor then head, in order. O(k log n).
