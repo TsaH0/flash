@@ -36,7 +36,9 @@ use crate::selection::{Range, Selection};
 use crate::text::{Direction, Text, TextError};
 use crate::transaction::{Transaction, TransactionError};
 
+mod builtin;
 mod column;
+mod command;
 mod commands;
 mod event;
 mod ids;
@@ -46,6 +48,7 @@ mod owner;
 mod prompt;
 
 pub use column::LineAnchor;
+pub use command::{CommandError, CommandFn, CommandId, CommandInfo, Commands, Context};
 pub use commands::Request;
 pub use event::{Event, KeyCode, KeyEvent, Modifiers};
 pub use ids::{DocumentId, ViewId};
@@ -155,6 +158,7 @@ pub struct Editor {
     register: Vec<String>,
     requests: Vec<Request>,
     options: Options,
+    commands: Commands,
     /// Wall time of the last commit, for instrumentation only.
     last_commit_ns: u64,
 }
@@ -165,7 +169,7 @@ impl Editor {
 
     /// An editor with no documents, for a `width` × `height` screen.
     pub fn new(width: u16, height: u16) -> Editor {
-        Editor {
+        let mut editor = Editor {
             documents: SlotMap::with_key(),
             views: SlotMap::with_key(),
             focus: None,
@@ -177,8 +181,11 @@ impl Editor {
             register: Vec::new(),
             requests: Vec::new(),
             options: Options::with_builtins(),
+            commands: Commands::default(),
             last_commit_ns: 0,
-        }
+        };
+        builtin::register(&mut editor);
+        editor
     }
 
     /// Opens `text` as a new document with no views. A text without a

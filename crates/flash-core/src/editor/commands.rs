@@ -147,7 +147,7 @@ impl Editor {
 
     // ---- key commands ----
 
-    fn request(&mut self, request: Request) {
+    pub(crate) fn request(&mut self, request: Request) {
         self.requests.push(request);
     }
 
@@ -196,7 +196,7 @@ impl Editor {
         )
     }
 
-    fn quit_now(&mut self) -> Effects {
+    pub(crate) fn quit_now(&mut self) -> Effects {
         self.quit = true;
         Effects {
             quit: true,
@@ -457,7 +457,7 @@ impl Editor {
         fx
     }
 
-    fn view_doc_id(&self, view: ViewId) -> Result<DocumentId, EditorError> {
+    pub(crate) fn view_doc_id(&self, view: ViewId) -> Result<DocumentId, EditorError> {
         self.views
             .get(view)
             .map(|v| v.doc)

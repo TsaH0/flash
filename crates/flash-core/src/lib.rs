@@ -32,8 +32,10 @@ pub use document::{
     RevisionLog, Timestamp,
 };
 pub use editor::{
-    DocumentId, Editor, EditorError, Effects, Event, KeyCode, KeyEvent, LineAnchor, Modifiers,
-    Prompt, PromptKind, Request, View, ViewId,
+    CommandError, CommandId, CommandInfo, Commands, Context, DocumentId, Editor, EditorError,
+    Effects, Event, KeyCode, KeyEvent, LineAnchor, Modifiers, OptionError, OptionId, OptionInfo,
+    OptionKind, OptionValue, Options, Owner, Prompt, PromptKind, Request, Scope, View, ViewId,
+    ViewOptions,
 };
 pub use motion::{Motion, Movement};
 pub use selection::{Range, Selection, SelectionError};
