@@ -328,3 +328,31 @@ fn line_ending_detection() {
         LineEnding::Crlf
     );
 }
+
+/// `RevisionLog::map_untouched` chains `ChangeSet::map_untouched` through
+/// every entry after `from`, and gives `None` for an evicted or future
+/// revision.
+#[test]
+fn log_maps_an_untouched_range_through_every_entry() {
+    let three = NonZeroUsize::new(3).unwrap();
+    // Five inserts at 0 on an empty text: lengths 1..=5.
+    let log = log_of(&inserts(0, 5), RevisionLog::with_limits(three, usize::MAX));
+    // At r2 (length 2), 1..2 is after every later insert at 0: shifted 3.
+    assert_eq!(log.map_untouched(rev(2), rev(5), 1, 2), Some((4, 5)));
+    assert_eq!(log.map_untouched(rev(5), rev(5), 1, 2), Some((1, 2)));
+    // 0..1 has an insert at its start.
+    assert_eq!(log.map_untouched(rev(2), rev(5), 0, 1), None);
+    assert_eq!(log.map_untouched(rev(1), rev(5), 1, 1), None, "evicted");
+    assert_eq!(log.map_untouched(rev(5), rev(4), 0, 0), None, "future");
+    // Untouched through the first entries but not the last.
+    let changes = [
+        ChangeSet::from_edits(4, [(0..0, "x")]).unwrap(),
+        ChangeSet::from_edits(5, [(5..5, "y")]).unwrap(),
+        ChangeSet::from_edits(6, [(3..4, "")]).unwrap(),
+    ];
+    let two = log_of(&changes[..2], RevisionLog::new());
+    assert_eq!(two.map_untouched(rev(0), rev(2), 2, 4), Some((3, 5)));
+    let all = log_of(&changes, RevisionLog::new());
+    assert_eq!(all.map_untouched(rev(0), rev(3), 2, 4), None);
+    assert_eq!(all.map_untouched(rev(2), rev(3), 1, 2), Some((1, 2)));
+}

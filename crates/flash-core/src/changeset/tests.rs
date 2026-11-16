@@ -384,3 +384,42 @@ fn builder_capacity_hint_never_panics() {
     let b = ChangeSetBuilder::with_capacity(0, usize::MAX);
     assert_eq!(b.finish(), Ok(ChangeSet::identity(0)));
 }
+
+/// `map_untouched(start, end)`: `Some` with the shifted range only if the
+/// change neither inserts at `start` or strictly inside, nor deletes
+/// anything that overlaps `start..end` or ends at `start`.
+#[test]
+fn map_untouched_keeps_a_prefix_only_if_nothing_touched_it() {
+    // "ab\ncdef": the line "cdef" starts at 3; the range is 3..5 ("cd").
+    let c = |edits: &[(std::ops::Range<usize>, &str)]| {
+        ChangeSet::from_edits(7, edits.iter().cloned()).unwrap()
+    };
+    // Untouched: edits before (not at) the start shift it; edits at or
+    // after the end do not.
+    assert_eq!(c(&[]).map_untouched(3, 5), Some((3, 5)));
+    assert_eq!(c(&[(5..5, "x")]).map_untouched(3, 5), Some((3, 5)));
+    assert_eq!(c(&[(5..7, "")]).map_untouched(3, 5), Some((3, 5)));
+    assert_eq!(c(&[(0..0, "xyz")]).map_untouched(3, 5), Some((6, 8)));
+    assert_eq!(c(&[(2..2, "x")]).map_untouched(3, 5), Some((4, 6)));
+    assert_eq!(c(&[(0..2, "")]).map_untouched(3, 5), Some((1, 3)));
+    assert_eq!(
+        c(&[(0..1, "pq"), (6..6, "x")]).map_untouched(3, 5),
+        Some((4, 6))
+    );
+    // Touched: an insert at the start or inside; a delete overlapping the
+    // range or ending at its start (the newline before it).
+    assert_eq!(c(&[(3..3, "x")]).map_untouched(3, 5), None);
+    assert_eq!(c(&[(4..4, "x")]).map_untouched(3, 5), None);
+    assert_eq!(c(&[(3..4, "")]).map_untouched(3, 5), None);
+    assert_eq!(c(&[(4..6, "")]).map_untouched(3, 5), None);
+    assert_eq!(c(&[(2..3, "")]).map_untouched(3, 5), None);
+    assert_eq!(c(&[(0..7, "")]).map_untouched(3, 5), None);
+    // An empty range at the start: an insert there touches it, a delete
+    // after it does not.
+    assert_eq!(c(&[(3..3, "x")]).map_untouched(3, 3), None);
+    assert_eq!(c(&[(3..4, "")]).map_untouched(3, 3), Some((3, 3)));
+    assert_eq!(c(&[(0..0, "x")]).map_untouched(0, 0), None);
+    // Out of range.
+    assert_eq!(c(&[]).map_untouched(3, 8), None);
+    assert_eq!(c(&[]).map_untouched(5, 3), None);
+}

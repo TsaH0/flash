@@ -261,3 +261,72 @@ fn ctrl_z_suspends_and_continuing_resumes() {
     assert!(s.wait_exit().success());
     s.assert_restored();
 }
+
+/// `FLASH_TRACE` records a real terminal session, ending with the key that
+/// quit, and `--replay` replays it without touching the file.
+#[test]
+fn a_recorded_session_replays() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = dir.path().join("doc.txt");
+    let trace = dir.path().join("session.jsonl");
+    fs::write(&doc, "abc\n").unwrap();
+    let mut s = Session::start(&[&doc], &[("FLASH_TRACE", trace.to_str().unwrap())]);
+    s.wait_ready();
+    s.send(b"xy\x1b[C");
+    s.send(b"\x11");
+    s.wait_until("the quit question", |s| s.text().contains("quit anyway"));
+    s.send(b"y");
+    assert!(s.wait_exit().success());
+    let recorded = fs::read_to_string(&trace).unwrap();
+    let lines: Vec<&str> = recorded.lines().collect();
+    assert_eq!(
+        lines.len(),
+        1 + 5,
+        "header + x, y, Right, Ctrl+Q, y: {recorded}"
+    );
+    assert!(lines[0].contains(r#""flash_trace":1"#));
+    assert!(lines[5].contains(r#""code":{"char":"y"}"#), "{}", lines[5]);
+    let out = Command::new(env!("CARGO_BIN_EXE_flash"))
+        .arg("--replay")
+        .arg(&trace)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains(r#""events":5"#));
+    assert_eq!(fs::read_to_string(&doc).unwrap(), "abc\n");
+}
+
+/// Not a check: measures the whole interactive path (input thread,
+/// channel, command, frame, write to a pty) for 500 keys typed 5 ms apart
+/// into a 1 MB file, and appends the latency log line to
+/// `$FLASH_PTY_LATENCY_OUT`. Run with `--ignored`.
+#[test]
+#[ignore]
+fn interactive_latency() {
+    let out = std::env::var("FLASH_PTY_LATENCY_OUT").expect("set FLASH_PTY_LATENCY_OUT");
+    let dir = tempfile::tempdir().unwrap();
+    let doc = dir.path().join("medium.txt");
+    let content: String = (0..25_000)
+        .map(|i| format!("    let value_{i} = compute({i}, \"text\"); // note\n"))
+        .collect();
+    fs::write(&doc, &content).unwrap();
+    let mut s = Session::start(&[&doc], &[("FLASH_LATENCY_LOG", &out)]);
+    s.wait_ready();
+    let keys: &[&[u8]] = &[
+        b"x", b"y", b"\x7f", b"\x1b[B", b"\x1b[C", b"z", b"\r", b"\x1b[A",
+    ];
+    for i in 0..500 {
+        s.send(keys[i % keys.len()]);
+        thread::sleep(Duration::from_millis(5));
+    }
+    // Quit without saving: Ctrl+Q, then confirm.
+    s.send(b"\x11");
+    s.wait_until("the quit question", |s| s.text().contains("quit anyway"));
+    s.send(b"y");
+    assert!(s.wait_exit().success());
+    s.assert_restored();
+}

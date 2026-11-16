@@ -33,14 +33,15 @@ use crate::motion::{Motion, Movement};
 use crate::selection::{Range, Selection};
 use crate::text::{Direction, Text, TextError};
 use crate::transaction::{Transaction, TransactionError};
-use crate::width::display_column;
 
+mod column;
 mod commands;
 mod event;
 mod ids;
 mod keys;
 mod prompt;
 
+pub use column::LineAnchor;
 pub use commands::Request;
 pub use event::{Event, KeyCode, KeyEvent, Modifiers};
 pub use ids::{DocumentId, ViewId};
@@ -62,6 +63,7 @@ pub struct View {
     top: usize,
     /// First visible display column (horizontal scroll).
     left: usize,
+    anchor: Option<LineAnchor>,
     /// Text area in cells (the screen minus the status row).
     width: u16,
     height: u16,
@@ -80,6 +82,12 @@ impl View {
     /// The first visible display column.
     pub fn left(&self) -> usize {
         self.left
+    }
+
+    /// The primary head's column and where its line's visible part starts,
+    /// as of the last scroll (check its fields before use).
+    pub fn anchor(&self) -> Option<&LineAnchor> {
+        self.anchor.as_ref()
     }
 
     /// The text area, `(width, height)` in cells.
@@ -174,6 +182,7 @@ impl Editor {
             doc,
             top: 0,
             left: 0,
+            anchor: None,
             width,
             height,
         });
@@ -580,27 +589,33 @@ impl Editor {
         }
     }
 
-    /// Scrolls `view` by the least amount that shows its primary head's
-    /// line. Returns whether `top` changed. O(log n).
+    /// Scrolls `view` by the least amount that shows its primary head
+    /// (line and column), and records the view's [`LineAnchor`]. Returns
+    /// whether `top` or `left` changed. O(log n + view width + distance
+    /// from the nearest still-valid checkpoint of the previous anchor, or
+    /// from the line start; see the `column` module).
     fn scroll(&mut self, view: ViewId) -> bool {
+        let tab = self.tab_width;
         let Some(v) = self.views.get(view) else {
             return false;
         };
-        let tab = self.tab_width;
-        let place = self
-            .documents
-            .get(v.doc)
-            .and_then(|d| Some((d, d.selection(view)?.primary().head())))
-            .and_then(|(d, head)| {
-                let line = d.text().line_of_offset(head).ok()?;
-                // O(length of the head's line).
-                let column = display_column(d.text(), head, tab).ok()?;
-                Some((line, column))
-            });
-        let (Some((line, column)), Some(v)) = (place, self.views.get_mut(view)) else {
+        let Some(doc) = self.documents.get(v.doc) else {
             return false;
         };
-        let width = usize::from(v.width);
+        let Some(head) = doc.selection(view).map(|s| s.primary().head()) else {
+            return false;
+        };
+        let Some(column::Located {
+            line,
+            line_start,
+            column,
+            rear,
+            old_start,
+        }) = column::locate(doc, v.anchor.as_ref(), head, tab)
+        else {
+            return false;
+        };
+        let (width, height) = (usize::from(v.width), usize::from(v.height));
         let left = if width == 0 {
             v.left
         } else if column < v.left {
@@ -610,7 +625,6 @@ impl Editor {
         } else {
             v.left
         };
-        let height = usize::from(v.height);
         let top = if height == 0 {
             v.top
         } else if line < v.top {
@@ -620,7 +634,33 @@ impl Editor {
         } else {
             v.top
         };
+        let anchor = LineAnchor {
+            revision: doc.revision(),
+            head,
+            line,
+            line_start,
+            head_column: column,
+            head_on_boundary: doc.text().is_grapheme_boundary(head),
+            tab_width: tab,
+            // Unscrolled (most lines): the visible part starts the line.
+            // Scrolled by less than a view width: forward from the
+            // previous start, if still valid. Else back from the head.
+            start: if left == 0 {
+                Some((line_start, 0))
+            } else if let Some(s) = old_start
+                .filter(|&(o, c)| o <= head && left.checked_sub(c).is_some_and(|d| d <= width))
+            {
+                column::line_start_from(doc.text(), s, head, left, tab)
+            } else {
+                column::line_start_at(doc.text(), head, column, left)
+            },
+            rear,
+        };
+        let Some(v) = self.views.get_mut(view) else {
+            return false;
+        };
         let changed = top != v.top || left != v.left;
+        v.anchor = Some(anchor);
         v.top = top;
         v.left = left;
         changed

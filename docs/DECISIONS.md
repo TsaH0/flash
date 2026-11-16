@@ -518,3 +518,160 @@ product decisions (D1–D4) are recorded in [PLAN.md section 8](PLAN.md#8-decisi
 - **Reopen if:** Stage 7's option registry adds an undo budget, a real
   session's history exceeds about 100 MB, or Stage 8 markers make nodes
   larger.
+
+## 020 — The core performs no I/O: commands queue requests
+
+- **Date:** 2026-11-16 (Stage 6)
+- **Decision:** `Editor::handle` never touches the disk, the clipboard, or
+  the terminal. Save, open, the system clipboard (OSC 52), and suspend
+  queue a `Request`; `Effects::requests` flags them; the frontend runs
+  them (`apps/flash/src/requests.rs`) and reports back with
+  `Editor::saved` / `Editor::opened`. The load and save algorithms are in
+  `flash_core::file` (std only, no terminal), called by the frontend. The
+  prompt that asks for paths and confirmations is core state.
+- **Why:** replay must be deterministic and harmless: a replayed trace
+  drops requests, so it can never write a file; the core stays testable
+  without a disk; the prompt is in traces like any other input.
+- **Alternatives:** a storage trait with real and in-memory backends
+  (replay would need a fake disk to be harmless, and `handle` would
+  block on I/O); I/O directly in `handle` (replay could overwrite files).
+- **Evidence:** `editor/commands_tests.rs`, `apps/flash/src/requests_tests.rs`,
+  `replay_prints_latency_summary` (the document is unchanged after a
+  replay), `a_recorded_session_replays` (pty).
+- **Trade-off:** a save's outcome arrives as a separate call, so the
+  editor holds no "saving" state; replays do not reproduce save outcomes.
+- **Reopen if:** saving or loading moves off the main thread (Stage 9
+  workers), which fits this shape.
+
+## 021 — File policy: strict loading, checked atomic saving
+
+- **Date:** 2026-11-16 (Stage 6)
+- **Decision:** loading streams 64 KiB reads into `TextBuilder`,
+  validating UTF-8 across read boundaries; invalid UTF-8 and non-regular
+  files are refused with a message (no lossy conversion); a BOM is
+  stripped and written back; line endings are counted while streaming; a
+  missing file opens empty. Saving resolves symlinks, refuses on a
+  conflict (size or mtime differ, else the content hash differs; a file
+  that appeared or vanished also counts) unless forced, then writes a
+  temp file in the target's directory, fsyncs it, copies permissions and
+  ownership, renames it over the target, and fsyncs the directory (best
+  effort). With more than one hard link, or ownership that cannot be
+  kept, it writes in place behind a fsynced backup copy and says so. A
+  read-only directory is an error, not a fallback. Every failure before
+  the rename removes the temp file and leaves the original intact.
+- **Why:** PLAN Stage 6; no silent data loss (PLAN 6).
+- **Alternatives:** lossy loading (silent corruption on save); always in
+  place (a crash mid-write loses the file); always atomic (splits hard
+  links, changes ownership); falling back to in place for read-only
+  directories (needs the backup in that directory too).
+- **Evidence:** `file/tests.rs` (19 cases, including an injected failure
+  at every phase); mutation checks in the Stage 6 report. Measured: load
+  ≈ 450 MB/s; an atomic, checked save of 1 MB on ext4 ≈ 4 ms.
+- **Trade-off:** the conflict check reads the old file when size and
+  mtime match (O(n)); FNV-1a is a change detector, not a cryptographic
+  hash. The ownership path itself (`fchown`) is not exercised by tests
+  (needs root or a second group).
+- **Reopen if:** large-file mode, file watching, or crash recovery
+  (journal) arrive.
+
+## 022 — Ctrl+Z suspends; undo moves to Alt+Z
+
+- **Date:** 2026-11-16 (Stage 6; owner decision)
+- **Decision:** Ctrl+Z suspends (and an external SIGTSTP does the same):
+  restore the terminal, stop, re-enter and redraw on continue. Undo is
+  Alt+Z, redo Alt+Y and Alt+Shift+Z. Supersedes the Stage 5 temporary
+  Ctrl+Z / Ctrl+Y.
+- **Why:** PLAN Stage 6 and terminal convention (vim, less, helix); the
+  modal keymap of Stage 7 will put undo on its own keys anyway.
+- **Reopen if:** Stage 7's default keymap changes either (both are
+  rebindable then).
+
+## 023 — Renderer: full redraw, synchronized, with re-sync and a line anchor
+
+- **Date:** 2026-11-16 (Stage 6)
+- **Decision:** each frame is a full redraw of the focused view into a
+  reused buffer between synchronized-update escapes, written once.
+  Graphemes are measured with `unicode-width` per cluster; after a
+  cluster whose per-character width differs (ZWJ emoji), the cursor is
+  re-positioned so later columns are right on terminals that do not join
+  clusters. When a view scrolls, the editor records a `LineAnchor` (the
+  head's column, and a grapheme boundary at or before the left column,
+  found by walking back at most one view width) that the renderer reuses
+  while revision, head, and tab width match, instead of walking the line
+  again.
+- **Why:** the full redraw is the simple baseline Stage 7 benchmarks
+  against; the anchor took the 1 MB single-line fixture from 78 ms back
+  to 26 ms per event (one walk instead of three).
+- **Evidence:** `render/tests.rs` (a small terminal emulator in both
+  cluster models), `random_events_render_cleanly` (300,000 events in a
+  one-off run; frames with and without anchors identical; found two
+  anchor bugs with zero-width graphemes, fixed),
+  `anchors_match_walking_from_the_line_start`.
+- **Trade-off:** a tab between the head and the left column disables
+  the left-edge part of the anchor (the renderer then walks that line).
+  The head's column no longer walks the line: see 025.
+- **Reopen if:** Stage 7's renderer work (dirty lines, per-line layout
+  cache) replaces it.
+
+## 024 — Main loop: threads, one channel, 8 ms drain, signals
+
+- **Date:** 2026-11-16 (Stage 6)
+- **Decision:** an input thread (`crossterm::event::read`) and a signal
+  thread (`signal-hook`: SIGTSTP, SIGCONT, SIGTERM, SIGHUP, SIGINT) send
+  to one `mpsc` channel. The loop blocks for one message, drains queued
+  messages for up to 8 ms, runs requests after each, and renders once.
+  SIGTERM/SIGHUP/SIGINT restore the terminal and exit with 128 + signal
+  (no save). The editor refuses to start unless stdin and stdout are
+  terminals.
+- **Why:** PLAN 2.8; the drain coalesces bursts (pastes, held keys)
+  into one frame; refusing without a terminal keeps crossterm from
+  grabbing `/dev/tty`.
+- **Evidence:** `apps/flash/tests/pty.rs`; interactive latency through a
+  pty (Stage 6 report F).
+- **Trade-off:** a terminating signal loses unsaved changes (this is not
+  crash recovery).
+- **Reopen if:** worker results (Stage 9) need priority over input.
+
+## 025 — The head's column from checkpoints, not from the line start
+
+- **Date:** 2026-11-16 (Stage 6 review)
+- **Decision:** the editor keeps the primary head's display column
+  incrementally (`editor/column.rs`). Each view's `LineAnchor` holds up
+  to three checkpoints (a grapheme boundary and its column): the head,
+  the left edge of the visible part, and a *rear* checkpoint 1–2 KB
+  behind the head on long lines. After any change, a checkpoint is
+  reused only if it was a grapheme boundary when recorded and still is,
+  it is on the head's line, and the revision log shows that no change
+  since touched its line's prefix (`RevisionLog::map_untouched`: no
+  insert at or inside it, no delete overlapping it or ending at its
+  start). The column is a walk from the nearest valid checkpoint:
+  forward, or backward over non-tab graphemes only. The left-edge
+  checkpoint is the line start when the view is not scrolled sideways,
+  else a forward walk from the previous one when the view scrolled by
+  less than its width, else a walk back from the head.
+- **Why:** the review found that Stage 6 walked the head's line from its
+  start on every event: on the 1 MB `one-line` fixture a key took
+  milliseconds in the core (Stage 5: about 2 µs), and the core latency
+  bench (100,000 samples per operation) could not finish. PLAN 4 asks
+  for `one-line` to be slow but bounded, not slow on every key.
+- **Evidence:** `random_events_never_panic` now checks every current
+  anchor against a walk from the line start, with `REAR` = 16 bytes in
+  tests so short lines use the rear checkpoint; it found two bugs before
+  this was committed: a head inside a cluster used as a checkpoint after
+  an edit made it a boundary, and lines dense with tabs falling back to
+  the line start on every Backspace. A scaled one-off run (300,000
+  events) passed. `local_edits_on_a_long_line_do_not_walk_it` bounds the
+  graphemes walked per key; `checkpoints_on_another_line_are_ignored`;
+  `map_untouched` unit and property tests. Mutation checks: removing the
+  boundary, tab, or same-line guards, or loosening either touch rule,
+  fails a test.
+- **Trade-off:** a jump along a long line (Home/End, a click, a search
+  result, or the benchmark's setup) still walks from the nearest
+  checkpoint or the line start: O(distance). An edit at least 1 KB
+  behind the head, or one that touches every checkpoint (undoing a large
+  group), walks from the line start once. The bookkeeping (line start,
+  boundary checks, the log check) costs about 0.2–1 µs per key over
+  Stage 5 on `small` and `medium` (stage report F).
+- **Reopen if:** a per-line layout cache (Stage 7 or soft wrap) can
+  answer columns directly.
+

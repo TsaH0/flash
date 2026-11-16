@@ -60,6 +60,11 @@ unsafe impl GlobalAlloc for Counting {
 static GLOBAL: Counting = Counting;
 
 const ITERS: usize = 100_000;
+/// Per-operation time budget and the fewest samples kept (see `measure`).
+const BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
+const MIN_SAMPLES: usize = 1_000;
+/// Distinct starting editors for the editor operations (see `run_fixture`).
+const PREPARED: usize = 1_000;
 
 struct Report {
     fixture: &'static str,
@@ -68,25 +73,37 @@ struct Report {
     p95: u64,
     p99: u64,
     max: u64,
+    samples: usize,
     allocs_per_op: f64,
     bytes_per_op: f64,
 }
 
-/// Runs `op(i)` ITERS times after a warm-up, timing each call. `setup(i)` runs
-/// untimed and uncounted before each call.
+/// Runs `op(i)` ITERS times after a warm-up, timing each call, but stops
+/// after BUDGET once it has MIN_SAMPLES (an operation that takes
+/// milliseconds, such as a vertical motion on `one-line`, would otherwise
+/// take most of an hour); the report says how many samples it took.
+/// `setup(i)` runs untimed and uncounted before each call.
 fn measure<S>(
     fixture: &'static str,
     name: &'static str,
     mut setup: impl FnMut(usize) -> S,
     mut op: impl FnMut(&mut S),
 ) -> Report {
+    let started = Instant::now();
     for i in 0..ITERS / 10 {
+        if started.elapsed() > BUDGET / 10 {
+            break;
+        }
         let mut s = setup(i);
         op(&mut s);
     }
+    let started = Instant::now();
     let mut samples = Vec::with_capacity(ITERS);
     let (mut allocs, mut bytes) = (0u64, 0u64);
     for i in 0..ITERS {
+        if samples.len() >= MIN_SAMPLES && started.elapsed() > BUDGET {
+            break;
+        }
         let mut s = setup(i);
         let (a0, b0) = (ALLOCS.load(Relaxed), BYTES.load(Relaxed));
         let start = Instant::now();
@@ -106,8 +123,9 @@ fn measure<S>(
         p95: pct(0.95),
         p99: pct(0.99),
         max: *samples.last().unwrap(),
-        allocs_per_op: allocs as f64 / ITERS as f64,
-        bytes_per_op: bytes as f64 / ITERS as f64,
+        samples: samples.len(),
+        allocs_per_op: allocs as f64 / samples.len() as f64,
+        bytes_per_op: bytes as f64 / samples.len() as f64,
     }
 }
 
@@ -231,15 +249,32 @@ fn run_fixture(fx: &Fixture) -> Vec<Report> {
     };
     let (one_view, one_ids) = editor_with(1);
     let (two_views, two_ids) = editor_with(2);
-    out.push(measure(
-        name,
-        "doc commit insert char (1 view)",
-        |i| {
+    // Editors already at the first PREPARED random offsets (Stage 6: a
+    // view scrolls to its head, and on `one-line` reaching a random offset
+    // walks the line, which 100,000 setups would repeat for hours). Each
+    // sample clones one: O(1), text shared.
+    let one_at: Vec<Editor> = (0..PREPARED)
+        .map(|i| {
             let mut ed = one_view.clone();
             ed.set_selection(one_ids[0], Selection::point(offsets[i]))
                 .unwrap();
             ed
-        },
+        })
+        .collect();
+    let two_at: Vec<Editor> = (0..PREPARED)
+        .map(|i| {
+            let mut ed = two_views.clone();
+            ed.set_selection(two_ids[0], Selection::point(offsets[i]))
+                .unwrap();
+            ed.set_selection(two_ids[1], Selection::point(offsets[i + 1]))
+                .unwrap();
+            ed
+        })
+        .collect();
+    out.push(measure(
+        name,
+        "doc commit insert char (1 view)",
+        |i| one_at[i % PREPARED].clone(),
         |ed| {
             let v = one_ids[0];
             let doc = ed.view_document(v).unwrap().1;
@@ -250,14 +285,7 @@ fn run_fixture(fx: &Fixture) -> Vec<Report> {
     out.push(measure(
         name,
         "doc commit insert char (2 views)",
-        |i| {
-            let mut ed = two_views.clone();
-            ed.set_selection(two_ids[0], Selection::point(offsets[i]))
-                .unwrap();
-            ed.set_selection(two_ids[1], Selection::point(offsets[(i + 1) % ITERS]))
-                .unwrap();
-            ed
-        },
+        |i| two_at[i % PREPARED].clone(),
         |ed| {
             let v = two_ids[0];
             let doc = ed.view_document(v).unwrap().1;
@@ -273,12 +301,7 @@ fn run_fixture(fx: &Fixture) -> Vec<Report> {
         out.push(measure(
             name,
             label,
-            |i| {
-                let mut ed = one_view.clone();
-                ed.set_selection(one_ids[0], Selection::point(offsets[i]))
-                    .unwrap();
-                ed
-            },
+            |i| one_at[i % PREPARED].clone(),
             |ed| {
                 black_box(ed.handle(&event));
             },
@@ -308,8 +331,7 @@ fn run_fixture(fx: &Fixture) -> Vec<Report> {
         },
     ));
     let with_edit = |i: usize| {
-        let mut ed = one_view.clone();
-        ed.set_selection(v, Selection::point(offsets[i])).unwrap();
+        let mut ed = one_at[i % PREPARED].clone();
         let doc = ed.view_document(v).unwrap().1;
         let txn = Transaction::insert(doc.text(), doc.selection(v).unwrap(), "x").unwrap();
         ed.commit(v, txn).unwrap();
@@ -399,8 +421,8 @@ fn main() {
             if let Some(f) = json.as_mut() {
                 writeln!(
                     f,
-                    r#"{{"fixture":"{}","op":"{}","p50_ns":{},"p95_ns":{},"p99_ns":{},"max_ns":{},"allocs_per_op":{:.3},"bytes_per_op":{:.1}}}"#,
-                    r.fixture, r.op, r.p50, r.p95, r.p99, r.max, r.allocs_per_op, r.bytes_per_op
+                    r#"{{"fixture":"{}","op":"{}","samples":{},"p50_ns":{},"p95_ns":{},"p99_ns":{},"max_ns":{},"allocs_per_op":{:.3},"bytes_per_op":{:.1}}}"#,
+                    r.fixture, r.op, r.samples, r.p50, r.p95, r.p99, r.max, r.allocs_per_op, r.bytes_per_op
                 )
                 .unwrap();
             }

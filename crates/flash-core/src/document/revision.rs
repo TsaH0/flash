@@ -169,6 +169,31 @@ impl RevisionLog {
     }
 }
 
+impl RevisionLog {
+    /// Maps `start..end` (offsets in the text at revision `from`) to the
+    /// text at `current` if no logged change after `from` touched it
+    /// ([`ChangeSet::map_untouched`]). `None` if one did, or if `from` is
+    /// in the future or evicted. O(ops before `end`, per entry after
+    /// `from`).
+    pub(crate) fn map_untouched(
+        &self,
+        from: Revision,
+        current: Revision,
+        start: usize,
+        end: usize,
+    ) -> Option<(usize, usize)> {
+        let oldest = self.oldest(current);
+        if from > current || from < oldest {
+            return None;
+        }
+        let skip = usize::try_from(from.0 - oldest.0).ok()?;
+        self.entries
+            .iter()
+            .skip(skip)
+            .try_fold((start, end), |(a, b), (_, c)| c.map_untouched(a, b))
+    }
+}
+
 impl Default for RevisionLog {
     fn default() -> Self {
         RevisionLog::new()

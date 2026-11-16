@@ -1,0 +1,4 @@
+{"fixture":"medium","op":"load","median_ns":2166669,"mb_per_s":461.5}
+{"fixture":"medium","op":"save (atomic, checked)","median_ns":4147641,"mb_per_s":241.1}
+{"fixture":"large","op":"load","median_ns":220034481,"mb_per_s":454.5}
+{"fixture":"large","op":"save (atomic, checked)","median_ns":281838209,"mb_per_s":354.8}

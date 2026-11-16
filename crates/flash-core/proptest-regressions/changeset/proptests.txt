@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc b52112ca2bb089fbcd4b9e53a5d25d757a31f1de17ef927ab61d18d9f2f5fd62 # shrinks to (s, c) = ("", ChangeSet { ops: [Insert("a")], len_before: 0, len_after: 1 })
+cc 1b07ab4773e4034ddec7fd2d1f74ef15db8b4bea0d54c426be2cca5ab358d2df # shrinks to (s, c, a, b) = ("", ChangeSet { ops: [Insert("a")], len_before: 0, len_after: 1 }, 0, 0)

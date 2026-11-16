@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::selection::proptests::assert_normalised;
+use crate::width::display_column;
 
 pub(crate) const PIECES: &[&str] = &[
     "a",
@@ -40,6 +41,9 @@ pub(crate) fn random_event(rng: &mut Xorshift) -> Event {
         KeyCode::Char('x'),
         KeyCode::Char('é'),
         KeyCode::Char('\u{301}'),
+        KeyCode::Char('\u{1F1EF}'),
+        KeyCode::Char('\u{200D}'),
+        KeyCode::Char('\u{1F600}'),
         KeyCode::Char('q'),
         KeyCode::Char('z'),
         KeyCode::Char('Z'),
@@ -79,14 +83,30 @@ pub(crate) fn random_event(rng: &mut Xorshift) -> Event {
     }
 }
 
-/// Every view's selection is valid and normalised, and the focused view
-/// shows its primary cursor's line.
+/// Every view's selection is valid and normalised; the focused view shows
+/// its primary cursor's line and has a current line anchor; and every
+/// current anchor agrees with walking the head's line from its start.
 fn check(ed: &Editor, after: &Event) {
+    let tab = ed.tab_width();
     for (id, view) in ed.views() {
         let doc = ed.document(view.doc()).unwrap();
         let sel = doc.selection(id).unwrap();
         assert_eq!(sel.validate(doc.text()), Ok(()), "after {after:?}");
         assert_normalised(sel).unwrap();
+        let head = sel.primary().head();
+        let current = view
+            .anchor()
+            .filter(|a| a.revision == doc.revision() && a.head == head && a.tab_width == tab);
+        if ed.focus() == Some(id) {
+            assert!(
+                current.is_some(),
+                "focused anchor {:?} stale after {after:?}",
+                view.anchor()
+            );
+        }
+        if let Some(a) = current {
+            check_anchor(doc.text(), a, view.left(), after);
+        }
     }
     if let Some(focus) = ed.focus() {
         let (view, doc) = ed.view_document(focus).unwrap();
@@ -102,6 +122,66 @@ fn check(ed: &Editor, after: &Event) {
                 view.top()
             );
         }
+    }
+}
+
+fn check_anchor(text: &Text, a: &LineAnchor, left: usize, after: &Event) {
+    let line = text.line_of_offset(a.head).unwrap();
+    assert_eq!(a.line, line, "anchor line after {after:?}");
+    assert_eq!(
+        a.line_start,
+        text.line_start(line).unwrap(),
+        "line start after {after:?}"
+    );
+    let column = display_column(text, a.head, a.tab_width).unwrap();
+    assert_eq!(
+        a.head_column, column,
+        "head column of {a:?} after {after:?}"
+    );
+    assert_eq!(a.head_on_boundary, text.is_grapheme_boundary(a.head));
+    if let Some((offset, at)) = a.start {
+        assert!(
+            text.is_grapheme_boundary(offset),
+            "start {a:?} after {after:?}"
+        );
+        assert!(
+            at <= left && offset <= a.head,
+            "start {a:?} left {left} after {after:?}"
+        );
+        assert_eq!(
+            text.line_of_offset(offset).unwrap(),
+            line,
+            "{a:?} after {after:?}"
+        );
+        assert_eq!(
+            display_column(text, offset, a.tab_width).unwrap(),
+            at,
+            "{a:?} after {after:?}"
+        );
+    }
+    // Wherever it came from, the start is the point walking back from
+    // the head finds (when that walk succeeds).
+    if let Some(expected) = super::column::line_start_at(text, a.head, column, left) {
+        assert_eq!(
+            a.start,
+            Some(expected),
+            "start of {a:?} left {left} after {after:?}"
+        );
+    }
+    if let Some((offset, at)) = a.rear {
+        assert!(
+            text.is_grapheme_boundary(offset),
+            "rear {a:?} after {after:?}"
+        );
+        assert!(
+            offset >= a.line_start && offset <= a.head,
+            "rear {a:?} after {after:?}"
+        );
+        assert_eq!(
+            display_column(text, offset, a.tab_width).unwrap(),
+            at,
+            "{a:?} after {after:?}"
+        );
     }
 }
 

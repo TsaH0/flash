@@ -72,3 +72,7 @@ required-features = ["internals"]
 [[bench]]
 name = "history"
 harness = false
+
+[[bench]]
+name = "file"
+harness = false

@@ -262,12 +262,46 @@ fn suspend() -> io::Result<()> {
     term::enter()
 }
 
+/// Writes `entries` to the trace (after the frame is flushed, so
+/// recording is not in the latency). A write error stops recording.
+fn record(
+    entries: &mut Vec<TraceEntry>,
+    recorder: &mut Option<TraceWriter<BufWriter<File>>>,
+    trace_error: &mut Option<String>,
+) {
+    if let Some(writer) = recorder {
+        for entry in entries.iter() {
+            if let Err(e) = writer.write(entry) {
+                *trace_error = Some(e.to_string());
+                *recorder = None;
+                break;
+            }
+        }
+    }
+    entries.clear();
+}
+
 /// The loop: one message, then everything queued (within the budget),
-/// then requests, then one frame.
+/// then requests, then one frame. Every exit path records the events
+/// already handled, so a trace ends with the key that quit.
 fn event_loop(
     editor: &mut Editor,
     rx: &Receiver<Msg>,
     stages: &mut Stages,
+    recorder: &mut Option<TraceWriter<BufWriter<File>>>,
+    trace_error: &mut Option<String>,
+) -> io::Result<Exit> {
+    let mut entries: Vec<TraceEntry> = Vec::new();
+    let result = run_loop(editor, rx, stages, &mut entries, recorder, trace_error);
+    record(&mut entries, recorder, trace_error);
+    result
+}
+
+fn run_loop(
+    editor: &mut Editor,
+    rx: &Receiver<Msg>,
+    stages: &mut Stages,
+    entries: &mut Vec<TraceEntry>,
     recorder: &mut Option<TraceWriter<BufWriter<File>>>,
     trace_error: &mut Option<String>,
 ) -> io::Result<Exit> {
@@ -282,7 +316,6 @@ fn event_loop(
     }
     // Per batch: (read, dequeued, command done, commit ns) per event.
     let mut batch: Vec<(Instant, Instant, Instant, u64)> = Vec::new();
-    let mut entries: Vec<TraceEntry> = Vec::new();
     loop {
         let Ok(first) = rx.recv() else {
             return Ok(Exit::Quit);
@@ -311,6 +344,7 @@ fn event_loop(
                 }
                 Msg::InputError(e) => return Err(e),
                 Msg::Signal(SIGTSTP) => {
+                    out.flush()?;
                     suspend()?;
                     full_redraw = true;
                 }
@@ -367,17 +401,7 @@ fn event_loop(
                 flush,
             });
         }
-        // Recording happens after the flush, so it is not in the latency.
-        if let Some(writer) = recorder {
-            for entry in entries.drain(..) {
-                if let Err(e) = writer.write(&entry) {
-                    *trace_error = Some(e.to_string());
-                    *recorder = None;
-                    break;
-                }
-            }
-        }
-        entries.clear();
+        record(entries, recorder, trace_error);
     }
 }
 

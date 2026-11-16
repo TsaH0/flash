@@ -1,0 +1,120 @@
+{"fixture":"small","op":"insert+delete char (owned)","samples":100000,"p50_ns":144,"p95_ns":171,"p99_ns":184,"max_ns":10850,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"insert char (after snapshot)","samples":100000,"p50_ns":273,"p95_ns":439,"p99_ns":486,"max_ns":7122,"allocs_per_op":5.992,"bytes_per_op":3339.6}
+{"fixture":"small","op":"delete <=16B (after snapshot)","samples":100000,"p50_ns":209,"p95_ns":315,"p99_ns":338,"max_ns":3039,"allocs_per_op":4.009,"bytes_per_op":2327.1}
+{"fixture":"small","op":"replace <=16B (after snapshot)","samples":100000,"p50_ns":234,"p95_ns":468,"p99_ns":504,"max_ns":5640,"allocs_per_op":5.268,"bytes_per_op":2969.8}
+{"fixture":"small","op":"line_of_offset","samples":100000,"p50_ns":69,"p95_ns":85,"p99_ns":91,"max_ns":5786,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"line_range","samples":100000,"p50_ns":91,"p95_ns":115,"p99_ns":123,"max_ns":3049,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"is_grapheme_boundary","samples":100000,"p50_ns":43,"p95_ns":58,"p99_ns":63,"max_ns":2022,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"move_graphemes 1 fwd","samples":100000,"p50_ns":79,"p95_ns":92,"p99_ns":98,"max_ns":2370,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"move_graphemes 16 fwd","samples":100000,"p50_ns":363,"p95_ns":382,"p99_ns":422,"max_ns":2820,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"move_graphemes 16 back","samples":100000,"p50_ns":241,"p95_ns":266,"p99_ns":299,"max_ns":4704,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"changeset 1 edit apply (after snapshot)","samples":100000,"p50_ns":227,"p95_ns":355,"p99_ns":483,"max_ns":10452,"allocs_per_op":4.341,"bytes_per_op":2504.1}
+{"fixture":"small","op":"txn insert char (1 cursor)","samples":100000,"p50_ns":418,"p95_ns":592,"p99_ns":623,"max_ns":23739,"allocs_per_op":6.992,"bytes_per_op":3411.6}
+{"fixture":"small","op":"txn backspace (1 cursor)","samples":100000,"p50_ns":377,"p95_ns":477,"p99_ns":514,"max_ns":3407,"allocs_per_op":5.249,"bytes_per_op":2535.8}
+{"fixture":"small","op":"doc commit insert char (1 view)","samples":100000,"p50_ns":969,"p95_ns":1098,"p99_ns":1134,"max_ns":8989,"allocs_per_op":11.028,"bytes_per_op":4728.0}
+{"fixture":"small","op":"doc commit insert char (2 views)","samples":100000,"p50_ns":1030,"p95_ns":1152,"p99_ns":1182,"max_ns":68158,"allocs_per_op":11.028,"bytes_per_op":4728.0}
+{"fixture":"small","op":"editor handle key 'x'","samples":100000,"p50_ns":1004,"p95_ns":1148,"p99_ns":1243,"max_ns":7164,"allocs_per_op":11.028,"bytes_per_op":4728.0}
+{"fixture":"small","op":"editor handle Right","samples":100000,"p50_ns":401,"p95_ns":437,"p99_ns":461,"max_ns":24191,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"editor key into open group (100)","samples":100000,"p50_ns":1191,"p95_ns":1248,"p99_ns":1310,"max_ns":18214,"allocs_per_op":11.000,"bytes_per_op":12482.0}
+{"fixture":"small","op":"undo char","samples":100000,"p50_ns":949,"p95_ns":1585,"p99_ns":1793,"max_ns":20627,"allocs_per_op":2.000,"bytes_per_op":80.0}
+{"fixture":"small","op":"redo char","samples":100000,"p50_ns":560,"p95_ns":803,"p99_ns":848,"max_ns":5950,"allocs_per_op":2.741,"bytes_per_op":633.3}
+{"fixture":"small","op":"motion right","samples":100000,"p50_ns":88,"p95_ns":102,"p99_ns":110,"max_ns":1649,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"motion down","samples":100000,"p50_ns":1084,"p95_ns":2067,"p99_ns":2524,"max_ns":12261,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"motion word forward","samples":100000,"p50_ns":230,"p95_ns":448,"p99_ns":567,"max_ns":2925,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"small","op":"snapshot+drop","samples":100000,"p50_ns":26,"p95_ns":27,"p99_ns":28,"max_ns":1851,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"insert+delete char (owned)","samples":100000,"p50_ns":377,"p95_ns":448,"p99_ns":504,"max_ns":22165,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"insert char (after snapshot)","samples":100000,"p50_ns":927,"p95_ns":1087,"p99_ns":1164,"max_ns":12149,"allocs_per_op":18.423,"bytes_per_op":5229.9}
+{"fixture":"medium","op":"delete <=16B (after snapshot)","samples":100000,"p50_ns":516,"p95_ns":579,"p99_ns":655,"max_ns":69301,"allocs_per_op":7.548,"bytes_per_op":2413.7}
+{"fixture":"medium","op":"replace <=16B (after snapshot)","samples":100000,"p50_ns":883,"p95_ns":1150,"p99_ns":1252,"max_ns":10981,"allocs_per_op":14.163,"bytes_per_op":4143.4}
+{"fixture":"medium","op":"line_of_offset","samples":100000,"p50_ns":126,"p95_ns":156,"p99_ns":172,"max_ns":8202,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"line_range","samples":100000,"p50_ns":336,"p95_ns":402,"p99_ns":481,"max_ns":9122,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"is_grapheme_boundary","samples":100000,"p50_ns":106,"p95_ns":136,"p99_ns":157,"max_ns":2935,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"move_graphemes 1 fwd","samples":100000,"p50_ns":139,"p95_ns":169,"p99_ns":184,"max_ns":2368,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"move_graphemes 16 fwd","samples":100000,"p50_ns":423,"p95_ns":459,"p99_ns":592,"max_ns":5323,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"move_graphemes 16 back","samples":100000,"p50_ns":299,"p95_ns":337,"p99_ns":476,"max_ns":12055,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"changeset 1 edit apply (after snapshot)","samples":100000,"p50_ns":651,"p95_ns":973,"p99_ns":1248,"max_ns":9950,"allocs_per_op":8.617,"bytes_per_op":2716.8}
+{"fixture":"medium","op":"txn insert char (1 cursor)","samples":100000,"p50_ns":1392,"p95_ns":1603,"p99_ns":1702,"max_ns":15180,"allocs_per_op":19.423,"bytes_per_op":5301.9}
+{"fixture":"medium","op":"txn backspace (1 cursor)","samples":100000,"p50_ns":1122,"p95_ns":1279,"p99_ns":1375,"max_ns":38682,"allocs_per_op":9.002,"bytes_per_op":2626.6}
+{"fixture":"medium","op":"doc commit insert char (1 view)","samples":100000,"p50_ns":2647,"p95_ns":2986,"p99_ns":3145,"max_ns":13507,"allocs_per_op":23.423,"bytes_per_op":6601.4}
+{"fixture":"medium","op":"doc commit insert char (2 views)","samples":100000,"p50_ns":2708,"p95_ns":3059,"p99_ns":3334,"max_ns":94549,"allocs_per_op":23.423,"bytes_per_op":6601.4}
+{"fixture":"medium","op":"editor handle key 'x'","samples":100000,"p50_ns":2655,"p95_ns":3010,"p99_ns":4004,"max_ns":146011,"allocs_per_op":23.423,"bytes_per_op":6601.4}
+{"fixture":"medium","op":"editor handle Right","samples":100000,"p50_ns":1214,"p95_ns":1457,"p99_ns":1590,"max_ns":71711,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"editor key into open group (100)","samples":100000,"p50_ns":1687,"p95_ns":1760,"p99_ns":1845,"max_ns":11747,"allocs_per_op":15.000,"bytes_per_op":12746.0}
+{"fixture":"medium","op":"undo char","samples":100000,"p50_ns":2066,"p95_ns":2739,"p99_ns":3052,"max_ns":65693,"allocs_per_op":2.762,"bytes_per_op":656.4}
+{"fixture":"medium","op":"redo char","samples":100000,"p50_ns":1259,"p95_ns":1721,"p99_ns":1879,"max_ns":8808,"allocs_per_op":3.569,"bytes_per_op":671.6}
+{"fixture":"medium","op":"motion right","samples":100000,"p50_ns":230,"p95_ns":282,"p99_ns":308,"max_ns":3872,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"motion down","samples":100000,"p50_ns":1867,"p95_ns":2871,"p99_ns":3266,"max_ns":13564,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"motion word forward","samples":100000,"p50_ns":409,"p95_ns":650,"p99_ns":765,"max_ns":3109,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"medium","op":"snapshot+drop","samples":100000,"p50_ns":26,"p95_ns":27,"p99_ns":28,"max_ns":76,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"insert+delete char (owned)","samples":100000,"p50_ns":1125,"p95_ns":2511,"p99_ns":3043,"max_ns":223156,"allocs_per_op":1.294,"bytes_per_op":930.7}
+{"fixture":"large","op":"insert char (after snapshot)","samples":100000,"p50_ns":1820,"p95_ns":2057,"p99_ns":2181,"max_ns":79261,"allocs_per_op":26.927,"bytes_per_op":6002.0}
+{"fixture":"large","op":"delete <=16B (after snapshot)","samples":100000,"p50_ns":1155,"p95_ns":1398,"p99_ns":1526,"max_ns":21483,"allocs_per_op":9.430,"bytes_per_op":2696.0}
+{"fixture":"large","op":"replace <=16B (after snapshot)","samples":100000,"p50_ns":1770,"p95_ns":2129,"p99_ns":2281,"max_ns":9596,"allocs_per_op":20.006,"bytes_per_op":4721.5}
+{"fixture":"large","op":"line_of_offset","samples":100000,"p50_ns":462,"p95_ns":663,"p99_ns":773,"max_ns":10114,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"line_range","samples":100000,"p50_ns":776,"p95_ns":974,"p99_ns":1088,"max_ns":21751,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"is_grapheme_boundary","samples":100000,"p50_ns":368,"p95_ns":524,"p99_ns":623,"max_ns":11281,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"move_graphemes 1 fwd","samples":100000,"p50_ns":401,"p95_ns":556,"p99_ns":652,"max_ns":10510,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"move_graphemes 16 fwd","samples":100000,"p50_ns":706,"p95_ns":884,"p99_ns":1005,"max_ns":11343,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"move_graphemes 16 back","samples":100000,"p50_ns":589,"p95_ns":768,"p99_ns":892,"max_ns":12653,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"changeset 1 edit apply (after snapshot)","samples":100000,"p50_ns":1356,"p95_ns":1914,"p99_ns":2244,"max_ns":68650,"allocs_per_op":10.993,"bytes_per_op":3044.4}
+{"fixture":"large","op":"txn insert char (1 cursor)","samples":100000,"p50_ns":2442,"p95_ns":2752,"p99_ns":2909,"max_ns":10694,"allocs_per_op":27.927,"bytes_per_op":6074.0}
+{"fixture":"large","op":"txn backspace (1 cursor)","samples":100000,"p50_ns":1999,"p95_ns":2323,"p99_ns":2492,"max_ns":19888,"allocs_per_op":11.001,"bytes_per_op":2926.6}
+{"fixture":"large","op":"doc commit insert char (1 view)","samples":100000,"p50_ns":3950,"p95_ns":4382,"p99_ns":4607,"max_ns":46944,"allocs_per_op":31.981,"bytes_per_op":7369.1}
+{"fixture":"large","op":"doc commit insert char (2 views)","samples":100000,"p50_ns":4028,"p95_ns":4458,"p99_ns":4692,"max_ns":18201,"allocs_per_op":31.981,"bytes_per_op":7369.1}
+{"fixture":"large","op":"editor handle key 'x'","samples":100000,"p50_ns":3971,"p95_ns":4385,"p99_ns":4593,"max_ns":74257,"allocs_per_op":31.981,"bytes_per_op":7369.1}
+{"fixture":"large","op":"editor handle Right","samples":100000,"p50_ns":1900,"p95_ns":2375,"p99_ns":2776,"max_ns":20318,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"editor key into open group (100)","samples":100000,"p50_ns":1960,"p95_ns":2023,"p99_ns":2065,"max_ns":10643,"allocs_per_op":17.000,"bytes_per_op":12954.0}
+{"fixture":"large","op":"undo char","samples":100000,"p50_ns":2505,"p95_ns":3185,"p99_ns":3499,"max_ns":15853,"allocs_per_op":2.939,"bytes_per_op":670.1}
+{"fixture":"large","op":"redo char","samples":100000,"p50_ns":1522,"p95_ns":2390,"p99_ns":2671,"max_ns":23211,"allocs_per_op":3.797,"bytes_per_op":659.1}
+{"fixture":"large","op":"motion right","samples":100000,"p50_ns":536,"p95_ns":727,"p99_ns":839,"max_ns":14948,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"motion down","samples":100000,"p50_ns":2693,"p95_ns":3754,"p99_ns":4201,"max_ns":21490,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"motion word forward","samples":100000,"p50_ns":777,"p95_ns":1081,"p99_ns":1244,"max_ns":11692,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"large","op":"snapshot+drop","samples":100000,"p50_ns":26,"p95_ns":27,"p99_ns":28,"max_ns":1367,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"insert+delete char (owned)","samples":100000,"p50_ns":376,"p95_ns":444,"p99_ns":486,"max_ns":11643,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"insert char (after snapshot)","samples":100000,"p50_ns":939,"p95_ns":1095,"p99_ns":1178,"max_ns":11812,"allocs_per_op":18.412,"bytes_per_op":5229.5}
+{"fixture":"one-line","op":"delete <=16B (after snapshot)","samples":100000,"p50_ns":514,"p95_ns":567,"p99_ns":618,"max_ns":11556,"allocs_per_op":7.547,"bytes_per_op":2414.0}
+{"fixture":"one-line","op":"replace <=16B (after snapshot)","samples":100000,"p50_ns":906,"p95_ns":1158,"p99_ns":1244,"max_ns":12028,"allocs_per_op":14.179,"bytes_per_op":4145.0}
+{"fixture":"one-line","op":"line_of_offset","samples":100000,"p50_ns":125,"p95_ns":154,"p99_ns":167,"max_ns":2338,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"line_range","samples":100000,"p50_ns":82,"p95_ns":84,"p99_ns":94,"max_ns":5339,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"is_grapheme_boundary","samples":100000,"p50_ns":102,"p95_ns":149,"p99_ns":196,"max_ns":4546,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"move_graphemes 1 fwd","samples":100000,"p50_ns":138,"p95_ns":170,"p99_ns":225,"max_ns":7041,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"move_graphemes 16 fwd","samples":100000,"p50_ns":417,"p95_ns":460,"p99_ns":592,"max_ns":10648,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"move_graphemes 16 back","samples":100000,"p50_ns":292,"p95_ns":329,"p99_ns":470,"max_ns":10469,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"changeset 1 edit apply (after snapshot)","samples":100000,"p50_ns":649,"p95_ns":998,"p99_ns":1269,"max_ns":10076,"allocs_per_op":8.618,"bytes_per_op":2717.4}
+{"fixture":"one-line","op":"txn insert char (1 cursor)","samples":100000,"p50_ns":1423,"p95_ns":1625,"p99_ns":1715,"max_ns":6563,"allocs_per_op":19.412,"bytes_per_op":5301.5}
+{"fixture":"one-line","op":"txn backspace (1 cursor)","samples":100000,"p50_ns":1122,"p95_ns":1274,"p99_ns":1359,"max_ns":20980,"allocs_per_op":9.002,"bytes_per_op":2626.7}
+{"fixture":"one-line","op":"doc commit insert char (1 view)","samples":100000,"p50_ns":2889,"p95_ns":3225,"p99_ns":3380,"max_ns":41882,"allocs_per_op":23.490,"bytes_per_op":6602.3}
+{"fixture":"one-line","op":"doc commit insert char (2 views)","samples":100000,"p50_ns":2980,"p95_ns":3321,"p99_ns":3481,"max_ns":15751,"allocs_per_op":23.490,"bytes_per_op":6602.3}
+{"fixture":"one-line","op":"editor handle key 'x'","samples":100000,"p50_ns":2976,"p95_ns":3317,"p99_ns":3472,"max_ns":68523,"allocs_per_op":23.490,"bytes_per_op":6602.3}
+{"fixture":"one-line","op":"editor handle Right","samples":100000,"p50_ns":1412,"p95_ns":1719,"p99_ns":1854,"max_ns":13329,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"editor key into open group (100)","samples":100000,"p50_ns":1664,"p95_ns":1729,"p99_ns":1761,"max_ns":17361,"allocs_per_op":15.000,"bytes_per_op":12746.0}
+{"fixture":"one-line","op":"undo char","samples":100000,"p50_ns":3850,"p95_ns":4202,"p99_ns":4515,"max_ns":17511,"allocs_per_op":2.732,"bytes_per_op":638.1}
+{"fixture":"one-line","op":"redo char","samples":100000,"p50_ns":1387,"p95_ns":2015,"p99_ns":2205,"max_ns":59269,"allocs_per_op":3.659,"bytes_per_op":677.7}
+{"fixture":"one-line","op":"motion right","samples":100000,"p50_ns":229,"p95_ns":283,"p99_ns":310,"max_ns":4365,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"motion down","samples":1000,"p50_ns":25813160,"p95_ns":49893779,"p99_ns":51816661,"max_ns":53148696,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"motion word forward","samples":100000,"p50_ns":409,"p95_ns":652,"p99_ns":776,"max_ns":5812,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"one-line","op":"snapshot+drop","samples":100000,"p50_ns":26,"p95_ns":27,"p99_ns":28,"max_ns":56,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"insert+delete char (owned)","samples":100000,"p50_ns":360,"p95_ns":430,"p99_ns":469,"max_ns":8100,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"insert char (after snapshot)","samples":100000,"p50_ns":523,"p95_ns":1103,"p99_ns":1181,"max_ns":11829,"allocs_per_op":12.540,"bytes_per_op":3700.4}
+{"fixture":"unicode","op":"delete <=16B (after snapshot)","samples":100000,"p50_ns":520,"p95_ns":577,"p99_ns":604,"max_ns":3907,"allocs_per_op":6.666,"bytes_per_op":2132.7}
+{"fixture":"unicode","op":"replace <=16B (after snapshot)","samples":100000,"p50_ns":928,"p95_ns":1184,"p99_ns":1271,"max_ns":21221,"allocs_per_op":14.171,"bytes_per_op":4143.8}
+{"fixture":"unicode","op":"line_of_offset","samples":100000,"p50_ns":129,"p95_ns":159,"p99_ns":173,"max_ns":3660,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"line_range","samples":100000,"p50_ns":350,"p95_ns":408,"p99_ns":437,"max_ns":6532,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"is_grapheme_boundary","samples":100000,"p50_ns":134,"p95_ns":175,"p99_ns":224,"max_ns":10618,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"move_graphemes 1 fwd","samples":100000,"p50_ns":171,"p95_ns":268,"p99_ns":307,"max_ns":3699,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"move_graphemes 16 fwd","samples":100000,"p50_ns":707,"p95_ns":994,"p99_ns":1206,"max_ns":5729,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"move_graphemes 16 back","samples":100000,"p50_ns":570,"p95_ns":783,"p99_ns":957,"max_ns":69712,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"changeset 1 edit apply (after snapshot)","samples":100000,"p50_ns":657,"p95_ns":1085,"p99_ns":1287,"max_ns":10820,"allocs_per_op":8.782,"bytes_per_op":2756.2}
+{"fixture":"unicode","op":"txn insert char (1 cursor)","samples":100000,"p50_ns":1024,"p95_ns":1629,"p99_ns":1759,"max_ns":13160,"allocs_per_op":13.540,"bytes_per_op":3772.4}
+{"fixture":"unicode","op":"txn backspace (1 cursor)","samples":100000,"p50_ns":1198,"p95_ns":1381,"p99_ns":1512,"max_ns":12234,"allocs_per_op":9.005,"bytes_per_op":2629.2}
+{"fixture":"unicode","op":"doc commit insert char (1 view)","samples":100000,"p50_ns":2853,"p95_ns":3836,"p99_ns":4364,"max_ns":19457,"allocs_per_op":17.461,"bytes_per_op":5031.2}
+{"fixture":"unicode","op":"doc commit insert char (2 views)","samples":100000,"p50_ns":2908,"p95_ns":3885,"p99_ns":4387,"max_ns":50823,"allocs_per_op":17.461,"bytes_per_op":5031.2}
+{"fixture":"unicode","op":"editor handle key 'x'","samples":100000,"p50_ns":2880,"p95_ns":3853,"p99_ns":4358,"max_ns":16380,"allocs_per_op":17.461,"bytes_per_op":5031.2}
+{"fixture":"unicode","op":"editor handle Right","samples":100000,"p50_ns":1482,"p95_ns":2309,"p99_ns":2720,"max_ns":14232,"allocs_per_op":0.004,"bytes_per_op":0.1}
+{"fixture":"unicode","op":"editor key into open group (100)","samples":100000,"p50_ns":1681,"p95_ns":1737,"p99_ns":1783,"max_ns":15837,"allocs_per_op":15.000,"bytes_per_op":12746.0}
+{"fixture":"unicode","op":"undo char","samples":100000,"p50_ns":2272,"p95_ns":3095,"p99_ns":3416,"max_ns":7080,"allocs_per_op":2.634,"bytes_per_op":208.3}
+{"fixture":"unicode","op":"redo char","samples":100000,"p50_ns":1352,"p95_ns":2040,"p99_ns":2326,"max_ns":5541,"allocs_per_op":2.681,"bytes_per_op":314.3}
+{"fixture":"unicode","op":"motion right","samples":100000,"p50_ns":263,"p95_ns":361,"p99_ns":411,"max_ns":5662,"allocs_per_op":0.000,"bytes_per_op":0.0}
+{"fixture":"unicode","op":"motion down","samples":100000,"p50_ns":2033,"p95_ns":3159,"p99_ns":3672,"max_ns":12786,"allocs_per_op":0.029,"bytes_per_op":0.4}
+{"fixture":"unicode","op":"motion word forward","samples":100000,"p50_ns":592,"p95_ns":1076,"p99_ns":1439,"max_ns":3715,"allocs_per_op":0.009,"bytes_per_op":0.1}
+{"fixture":"unicode","op":"snapshot+drop","samples":100000,"p50_ns":26,"p95_ns":27,"p99_ns":28,"max_ns":61,"allocs_per_op":0.000,"bytes_per_op":0.0}

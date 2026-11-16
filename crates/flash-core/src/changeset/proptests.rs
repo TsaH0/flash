@@ -283,3 +283,29 @@ proptest! {
         prop_assert_eq!(positions, expected);
     }
 }
+
+proptest! {
+    /// What `map_untouched` promises: the range keeps its text, and the
+    /// character before it (a line terminator, for a line start) is the
+    /// same one, so a line start stays a line start.
+    #[test]
+    fn map_untouched_keeps_the_range_and_what_precedes_it(
+        (s, c, a, b) in text_and_changeset().prop_flat_map(|(s, c)| {
+            let n = s.len();
+            (Just(s), Just(c), 0..=n, 0..=n)
+        })
+    ) {
+        let (a, b) = (floor_boundary(&s, a.min(b)), floor_boundary(&s, a.max(b)));
+        let after = apply_str(&c, &s);
+        if let Some((a2, b2)) = c.map_untouched(a, b) {
+            prop_assert_eq!(&after[a2..b2], &s[a..b]);
+            prop_assert_eq!(a2 == 0, a == 0);
+            if a > 0 {
+                prop_assert_eq!(after[..a2].chars().next_back(), s[..a].chars().next_back());
+            }
+            // And the mapped ends are where `map_pos` puts them.
+            prop_assert_eq!(c.map_pos(a, Assoc::Before).unwrap(), a2);
+            prop_assert_eq!(c.map_pos(b, Assoc::Before).unwrap(), b2);
+        }
+    }
+}

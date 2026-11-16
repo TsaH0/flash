@@ -528,3 +528,89 @@ fn undo_from_another_view_maps_the_typing_view() {
     assert_eq!(heads(&ed, b), [5]);
     assert_eq!(heads(&ed, a), [5]);
 }
+
+/// PLAN 4 `one-line`: after one jump into a long line, editing and moving
+/// near the head walk only near it (Stage 6 walked the whole line from its
+/// start on every key).
+#[test]
+fn local_edits_on_a_long_line_do_not_walk_it() {
+    use super::column::{REAR, WALKED};
+    let line: String = "ab\tc老虎é😀 ".repeat(10_000);
+    let (mut ed, doc, view) = editor(&line);
+    let middle = line.len() / 2;
+    let middle = (middle..).find(|&o| line.is_char_boundary(o)).unwrap();
+    ed.set_selection(view, Selection::point(middle)).unwrap();
+    let walked = || WALKED.with(|w| w.get());
+    let before = walked();
+    let mut now = 0;
+    // Each key walks at most from the rear checkpoint (2 * REAR bytes
+    // behind, or REAR once it is moved up) plus a view width.
+    let mut press = |ed: &mut Editor, event: Event| {
+        now += 2_000_000_000;
+        let start = walked();
+        ed.handle_at(&event, Timestamp::from_nanos(now));
+        let n = walked() - start;
+        assert!(n <= 3 * REAR, "walked {n} graphemes for {event:?}");
+    };
+    for c in "hello\tworld".chars() {
+        press(&mut ed, plain(KeyCode::Char(c)));
+    }
+    for code in [
+        KeyCode::Backspace,
+        KeyCode::Left,
+        KeyCode::Left,
+        KeyCode::Right,
+        KeyCode::Delete,
+        KeyCode::Backspace,
+    ] {
+        press(&mut ed, plain(code));
+    }
+    press(&mut ed, ctrl(KeyCode::Left));
+    press(&mut ed, ctrl(KeyCode::Right));
+    for _ in 0..5 {
+        press(&mut ed, alt(KeyCode::Char('z')));
+    }
+    for _ in 0..3 {
+        press(&mut ed, alt(KeyCode::Char('y')));
+    }
+    let local = walked() - before;
+    assert!(
+        local < line.len() / 4,
+        "walked {local} graphemes for local keys"
+    );
+    // And the columns are right: the same as walking from the line start.
+    let (v, d) = ed.view_document(view).unwrap();
+    let a = v.anchor().unwrap();
+    assert_eq!(d.revision(), a.revision);
+    let truth = crate::width::display_column(d.text(), a.head, a.tab_width).unwrap();
+    assert_eq!(a.head_column, truth);
+    assert!(text(&ed, doc).len() > line.len());
+}
+
+/// A checkpoint is used only on the head's own line: an anchor whose rear
+/// checkpoint lies on the previous line (close enough to keep) is ignored.
+#[test]
+fn checkpoints_on_another_line_are_ignored() {
+    use super::column::{LineAnchor, REAR, locate};
+    let s = format!("{}\n{}", "a".repeat(20), "b".repeat(20));
+    let (ed, doc, _) = editor(&s);
+    let d = ed.document(doc).unwrap();
+    let head = 21 + REAR + 1;
+    let tab = NonZeroU8::new(4).unwrap();
+    let anchor = LineAnchor {
+        revision: d.revision(),
+        head: 15,
+        line: 0,
+        line_start: 0,
+        head_column: 15,
+        head_on_boundary: true,
+        tab_width: tab,
+        start: None,
+        rear: Some((head - 2 * REAR, head - 2 * REAR)),
+    };
+    let got = locate(d, Some(&anchor), head, tab).unwrap();
+    assert_eq!((got.line, got.line_start, got.column), (1, 21, REAR + 1));
+    let (rear, at) = got.rear.unwrap();
+    assert!(rear >= 21, "rear {rear} is on line 0");
+    assert_eq!(at, rear - 21);
+}

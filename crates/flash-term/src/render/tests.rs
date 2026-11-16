@@ -277,6 +277,44 @@ fn columns_after_a_disputed_cluster_are_right_on_any_terminal() {
 }
 
 #[test]
+fn anchors_match_walking_from_the_line_start() {
+    // Long lines with wide characters, combining marks, and tabs (which
+    // disable the anchor), scrolled to many positions.
+    let line = "ab漢e\u{301}cd😀xyz\u{1F1FA}\u{1F1F8}".repeat(30);
+    for text in [
+        line.clone(),
+        format!("{line}\t{line}"),
+        format!("x\n{line}\ny"),
+    ] {
+        let mut ed = editor_with(&text, 17, 4);
+        let mut plain = Renderer::new();
+        plain.anchors = false;
+        for i in 0..400 {
+            let key = if i % 97 < 60 {
+                KeyCode::Right
+            } else {
+                KeyCode::Left
+            };
+            ed.handle(&plain_key(key));
+            let anchored = Renderer::new().frame(&ed, 0).to_vec();
+            assert_eq!(plain.frame(&ed, 0), &anchored[..], "step {i}");
+        }
+    }
+    // The anchor is used: the head's line starts drawing near the left
+    // column, not at the line start.
+    let mut ed = editor_with(&"a".repeat(1000), 10, 2);
+    ed.handle(&plain_key(KeyCode::End));
+    let view = ed.view(ed.focus().unwrap()).unwrap();
+    let anchor = view.anchor().unwrap();
+    assert_eq!(anchor.head_column, 1000);
+    assert_eq!(anchor.start, Some((view.left(), view.left())));
+}
+
+fn plain_key(code: KeyCode) -> Event {
+    plain(code)
+}
+
+#[test]
 fn a_wide_character_cut_by_the_right_edge_is_spaces() {
     let ed = editor_with("a漢", 2, 3);
     let s = screen(&ed);
@@ -445,6 +483,7 @@ fn random_events_render_cleanly() {
             .collect();
         let mut ed = editor_with(&text, 1 + next(30) as u16, 1 + next(8) as u16);
         let mut renderer = Renderer::new();
+        let mut plain_renderer = Renderer::new();
         for _ in 0..100 {
             let event = match next(20) {
                 0 => Event::Paste {
@@ -464,6 +503,21 @@ fn random_events_render_cleanly() {
             let (w, h) = ed.screen();
             let bytes = renderer.frame(&ed, 0).to_vec();
             Screen::of(&bytes, w.into(), h.into());
+            // The view's line anchor never changes the frame.
+            plain_renderer.anchors = false;
+            if plain_renderer.frame(&ed, 0) != &bytes[..] {
+                let f = ed.focus().unwrap();
+                let (v, d) = ed.view_document(f).unwrap();
+                panic!(
+                    "after {event:?}: text {:?} sel {:?} left {} top {} size {:?} anchor {:?}",
+                    d.text().to_string(),
+                    d.selection(f),
+                    v.left(),
+                    v.top(),
+                    v.size(),
+                    v.anchor()
+                );
+            }
         }
     }
 }

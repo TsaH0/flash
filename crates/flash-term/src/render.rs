@@ -29,12 +29,16 @@ use flash_core::{Direction, Document, Editor, Prompt, Selection, View};
 #[derive(Debug, Default)]
 pub struct Renderer {
     buf: Vec<u8>,
+    /// Use the view's [`flash_core::LineAnchor`] (tests turn it off to
+    /// check it changes nothing).
+    anchors: bool,
 }
 
 impl Renderer {
     pub fn new() -> Renderer {
         Renderer {
             buf: Vec::with_capacity(64 << 10),
+            anchors: true,
         }
     }
 
@@ -44,7 +48,7 @@ impl Renderer {
     pub fn frame(&mut self, editor: &Editor, latency_ns: u64) -> &[u8] {
         self.buf.clear();
         // Writing into a Vec cannot fail.
-        let result = frame(&mut self.buf, editor, latency_ns);
+        let result = frame(&mut self.buf, editor, latency_ns, self.anchors);
         debug_assert!(result.is_ok());
         &self.buf
     }
@@ -60,7 +64,7 @@ impl Renderer {
     }
 }
 
-fn frame(out: &mut Vec<u8>, editor: &Editor, latency_ns: u64) -> io::Result<()> {
+fn frame(out: &mut Vec<u8>, editor: &Editor, latency_ns: u64, anchors: bool) -> io::Result<()> {
     let (width, height) = editor.screen();
     if width == 0 || height == 0 {
         return Ok(());
@@ -82,10 +86,25 @@ fn frame(out: &mut Vec<u8>, editor: &Editor, latency_ns: u64) -> io::Result<()> 
     let cols = usize::from(width);
     let rows = usize::from(height - 1);
     let text = doc.text();
+    let head = selection.primary().head();
+    // The anchor the view recorded when it scrolled, if still current:
+    // the head's column and where its line's visible part starts, so a
+    // long line is not walked again.
+    let anchor = view.anchor().filter(|a| {
+        anchors && a.revision == doc.revision() && a.head == head && a.tab_width == tab
+    });
+    let head_line = match anchor {
+        Some(a) => a.line,
+        None => text.line_of_offset(head).unwrap_or(0),
+    };
     for row in 0..rows {
         queue!(out, MoveTo(0, row as u16))?;
         let line = view.top() + row;
         if line < text.line_count() {
+            let start = anchor
+                .filter(|a| a.line == line)
+                .and_then(|a| a.start)
+                .filter(|&(_, column)| column <= view.left());
             render_line(
                 out,
                 doc,
@@ -95,6 +114,7 @@ fn frame(out: &mut Vec<u8>, editor: &Editor, latency_ns: u64) -> io::Result<()> 
                 view.left(),
                 cols,
                 tab,
+                start,
             )?;
         }
         queue!(
@@ -104,10 +124,11 @@ fn frame(out: &mut Vec<u8>, editor: &Editor, latency_ns: u64) -> io::Result<()> 
         )?;
     }
 
-    let head = selection.primary().head();
-    let head_line = text.line_of_offset(head).unwrap_or(0);
-    // O(length of the head's line); the view's scroll already paid it.
-    let column = display_column(text, head, tab).unwrap_or(0);
+    let column = match anchor {
+        Some(a) => a.head_column,
+        // O(length of the head's line).
+        None => display_column(text, head, tab).unwrap_or(0),
+    };
     let cursor = match editor.prompt() {
         Some(prompt) => bottom_line(out, prompt_line(prompt), width, height)?,
         None => {
@@ -235,7 +256,9 @@ fn per_char_width(g: &str) -> usize {
 
 /// Draws one line's content (on screen row `row`) from display column
 /// `left`, `width` cells wide. Cells inside a non-empty range, and
-/// secondary cursors, are drawn reversed. O(log n + log k + columns up to
+/// secondary cursors, are drawn reversed. Walks from the line start, or
+/// from `start` (a grapheme boundary on the line and its display column,
+/// at or before `left`). O(log n + log k + columns from the start to
 /// `left + width`).
 #[allow(clippy::too_many_arguments)]
 fn render_line(
@@ -247,13 +270,16 @@ fn render_line(
     left: usize,
     width: usize,
     tab: NonZeroU8,
+    start: Option<(usize, usize)>,
 ) -> io::Result<()> {
     let text = doc.text();
-    let (Ok(content), Ok(graphemes)) = (
-        text.line_range(line),
-        text.line_start(line)
-            .and_then(|start| text.graphemes(start, Direction::Forward)),
-    ) else {
+    let Ok(content) = text.line_range(line) else {
+        return Ok(());
+    };
+    let (from, from_column) = start
+        .filter(|&(offset, _)| content.contains(&offset) || offset == content.end)
+        .unwrap_or((content.start, 0));
+    let Ok(graphemes) = text.graphemes(from, Direction::Forward) else {
         return Ok(());
     };
     let ranges = selection.ranges();
@@ -274,7 +300,7 @@ fn render_line(
     };
 
     let right = left.saturating_add(width);
-    let (mut column, mut pos, mut reversed) = (0usize, content.start, false);
+    let (mut column, mut pos, mut reversed) = (from_column, from, false);
     for g in graphemes {
         if pos >= content.end || column >= right {
             break;

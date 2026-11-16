@@ -5,6 +5,42 @@
 use super::{Assoc, ChangeSet, ChangeSetError, Op};
 
 impl ChangeSet {
+    /// Maps `start..end` (offsets in the text before this change) to the
+    /// text after it, if the change left the range and the character
+    /// before it alone: nothing inserted at `start` or strictly inside the
+    /// range, nothing deleted that overlaps it or ends at `start`. Then
+    /// the range holds the same text, preceded by the same character, so
+    /// a line start stays a line start. `None` otherwise, or if
+    /// `start > end` or `end > len_before()`. Conservative: an insert at
+    /// `start` that ends in a newline also gives `None`. O(ops before
+    /// `end`).
+    pub(crate) fn map_untouched(&self, start: usize, end: usize) -> Option<(usize, usize)> {
+        if start > end || end > self.len_before() {
+            return None;
+        }
+        // Net bytes added before `start`.
+        let (mut old, mut inserted, mut deleted) = (0usize, 0usize, 0usize);
+        for op in self.ops() {
+            if old > end || (old == end && old > start) {
+                break;
+            }
+            match op {
+                Op::Retain(n) => old += n,
+                Op::Insert(s) if old < start => inserted += s.len(),
+                Op::Insert(_) => return None,
+                Op::Delete(n) if old + n < start => {
+                    deleted += n;
+                    old += n;
+                }
+                // Only for an empty range: a delete starting at its end.
+                Op::Delete(_) if old == end => break,
+                Op::Delete(_) => return None,
+            }
+        }
+        let shift = |p: usize| p - deleted + inserted;
+        Some((shift(start), shift(end)))
+    }
+
     /// Maps `pos`, an offset in the text before this change, to the
     /// corresponding offset after it. O(ops).
     ///

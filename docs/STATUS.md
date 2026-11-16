@@ -1,7 +1,8 @@
 # Flash status
 
-Updated: 2026-11-16, Stage 6 in progress (Stages 4 and 5 approved by the
-owner 2026-11-16).
+Updated: 2026-11-17, Stage 6 complete and awaiting owner approval
+(Stages 4 and 5 approved by the owner 2026-11-16); Stage 7 started at the
+owner's request.
 
 ## Completed and tested
 
@@ -51,11 +52,27 @@ owner 2026-11-16).
   composition until a pause, motion, paste, undo, or checkpoint; time is
   an input (`Editor::handle_at`, trace `t_ns`) so replay groups exactly;
   chunked node storage; no cap (DECISIONS 017–019). Temporary keys
-  Ctrl+Z / Ctrl+Y. Memory per node in `benches/history.rs`.
+  Alt+Z / Alt+Y since Stage 6. Memory per node in `benches/history.rs`.
 - **Benchmarks** (`benches/text.rs`, `benches/latency.rs`): Criterion suite
   plus per-operation p50/p95/p99/max and allocation counts on deterministic
   fixtures. Results in `bench/results/`. Interactive skeleton latency (real
   terminal, read → flush): p99 758 µs over 199 events.
+
+- **Files** (`crates/flash-core/src/file/`): streaming load (invalid
+  UTF-8 refused, BOM, dominant line ending, size/mtime/hash); atomic save
+  over the resolved target, in place behind a backup for hard links or
+  ownership, conflict check; failures leave the original (DECISIONS 021).
+- **Terminal editor** (`crates/flash-term`, `apps/flash`): renderer with
+  horizontal scroll, tabs, per-cluster width and re-sync, prompt and
+  status line; terminal guard restored on exit, error, panic, signals,
+  and around Ctrl+Z suspend; input and signal threads, one channel, 8 ms
+  drain; save/open/quit prompts, register and OSC 52 clipboard; requests
+  keep the core free of I/O (DECISIONS 020–024). Undo is Alt+Z, redo
+  Alt+Y / Alt+Shift+Z (owner decision 2026-11-16). pty tests, including a
+  `FLASH_TRACE` session recorded and replayed.
+- **Column checkpoints** (`editor/column.rs`): the head's column without
+  walking long lines (DECISIONS 025). Interactive latency through a pty:
+  p99 475 µs.
 
 ## Implemented but not fully verified
 
@@ -66,13 +83,16 @@ owner 2026-11-16).
   approved both without one (2026-11-16). The implementer's reviews are
   in [stage-4.md](stages/stage-4.md) and [stage-5.md](stages/stage-5.md)
   section G.
-- `FLASH_TRACE` recording in a real terminal has no automated test (needs
-  a TTY); the format and `--replay` are tested.
+- Stage 6 has no independent fresh-context review; the implementer's
+  review is in [stage-6.md](stages/stage-6.md) section G. Awaiting the
+  owner's approval.
+- File ownership preservation (`fchown`) is tested only by simulation
+  (needs root).
 
 ## In progress
 
-- Stage 6: minimal usable terminal editor (branch `stage-6`; design
-  [2026-11-16-stage-6-design.md](superpowers/specs/2026-11-16-stage-6-design.md)).
+- Stage 7: commands, keymaps, modes, events, fast rendering (branch
+  `stage-7` on top of `stage-6`).
 
 ## Planned
 
@@ -84,5 +104,6 @@ owner 2026-11-16).
   Stage 10 (LSP).
 - History cap: none until measurements or the Stage 7 option registry
   ask for one (DECISIONS 019).
-- Up/down motion on huge single-line files is O(line length); revisit with
-  the Stage 6 renderer's column cache.
+- Up/down motion and Home/End on huge single-line files are O(line
+  length) (about 26 ms on 1 MB); revisit with a Stage 7 per-line layout
+  cache.
