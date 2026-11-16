@@ -201,10 +201,10 @@ impl Editor {
     /// Runs command `id`. An unknown ID changes nothing and sets the
     /// message.
     pub fn run(&mut self, id: CommandId, cx: &Context<'_>) -> Effects {
-        match self.commands.body(id) {
-            Some(body) => body(self, cx),
-            None => self.notify(CommandError::Unknown(id)),
-        }
+        self.delivering(|ed| match ed.commands.body(id) {
+            Some(body) => body(ed, cx),
+            None => ed.notify(CommandError::Unknown(id)),
+        })
     }
 
     /// Runs the command named `name`.
@@ -215,11 +215,12 @@ impl Editor {
         }
     }
 
-    /// Removes everything `owner` registered: commands and options (and,
-    /// from later tasks, hooks, modes, and key layers).
+    /// Removes everything `owner` registered: commands, options, hooks
+    /// (and, from later tasks, modes and key layers).
     pub fn remove_owner(&mut self, owner: Owner) {
         self.commands.remove_owner(owner);
         self.options.remove_owner(owner);
+        self.hooks.remove_owner(owner);
         self.refresh_options();
     }
 }

@@ -41,8 +41,10 @@ mod column;
 mod command;
 mod commands;
 mod event;
+mod hooks;
 mod ids;
 mod keys;
+mod mode;
 mod options;
 mod owner;
 mod prompt;
@@ -51,7 +53,9 @@ pub use column::LineAnchor;
 pub use command::{CommandError, CommandFn, CommandId, CommandInfo, Commands, Context};
 pub use commands::Request;
 pub use event::{Event, KeyCode, KeyEvent, Modifiers};
+pub use hooks::{EditorEvent, EventKinds, HookFn, HookId, MAX_ROUNDS};
 pub use ids::{DocumentId, ViewId};
+pub use mode::ModeId;
 pub use options::{
     OptionError, OptionId, OptionInfo, OptionKind, OptionValue, Options, Scope, ViewOptions,
 };
@@ -136,6 +140,20 @@ pub struct Effects {
 }
 
 impl Effects {
+    /// Both sets of changes.
+    pub fn or(self, other: Effects) -> Effects {
+        Effects {
+            text: self.text || other.text,
+            selection: self.selection || other.selection,
+            scroll: self.scroll || other.scroll,
+            resize: self.resize || other.resize,
+            message: self.message || other.message,
+            prompt: self.prompt || other.prompt,
+            requests: self.requests || other.requests,
+            quit: self.quit || other.quit,
+        }
+    }
+
     /// Whether anything visible changed.
     pub fn needs_redraw(&self) -> bool {
         self.text || self.selection || self.scroll || self.resize || self.message || self.prompt
@@ -159,6 +177,7 @@ pub struct Editor {
     requests: Vec<Request>,
     options: Options,
     commands: Commands,
+    hooks: hooks::Hooks,
     /// Wall time of the last commit, for instrumentation only.
     last_commit_ns: u64,
 }
@@ -182,6 +201,7 @@ impl Editor {
             requests: Vec::new(),
             options: Options::with_builtins(),
             commands: Commands::default(),
+            hooks: hooks::Hooks::default(),
             last_commit_ns: 0,
         };
         builtin::register(&mut editor);
@@ -237,6 +257,7 @@ impl Editor {
         });
         document.add_view(view);
         self.focus = Some(view);
+        self.emit(EditorEvent::ViewOpened { view });
         Ok(view)
     }
 
@@ -251,6 +272,7 @@ impl Editor {
             doc.remove_view(view);
         }
         self.options.forget_view(view);
+        self.emit(EditorEvent::ViewClosed { view });
         self.refocus();
         Ok(())
     }
@@ -264,6 +286,7 @@ impl Editor {
         for view in removed.views() {
             self.views.remove(view);
             self.options.forget_view(view);
+            self.emit(EditorEvent::ViewClosed { view });
         }
         self.options.forget_document(doc);
         self.refocus();
@@ -316,6 +339,7 @@ impl Editor {
         self.document_of_mut(view)?
             .set_selection(view, selection)
             .map_err(EditorError::Commit)?;
+        self.emit(EditorEvent::SelectionChanged { view });
         self.scroll(view);
         Ok(())
     }
@@ -325,10 +349,12 @@ impl Editor {
     /// the document's revision afterwards.
     pub fn commit(&mut self, view: ViewId, txn: Transaction) -> Result<Revision, EditorError> {
         let record = Record::step(self.now);
-        let revision = self
-            .document_of_mut(view)?
+        let doc = self.document_of_mut(view)?;
+        let before = doc.revision();
+        let revision = doc
             .commit_with(view, txn, record)
             .map_err(EditorError::Commit)?;
+        self.emit_document(view, before, true);
         self.scroll_focus();
         Ok(revision)
     }
@@ -336,7 +362,10 @@ impl Editor {
     /// Undoes the last change to `view`'s document, on its behalf
     /// ([`Document::undo`]). `None` if there is nothing to undo.
     pub fn undo(&mut self, view: ViewId) -> Result<Option<Revision>, EditorError> {
-        let result = self.document_of_mut(view)?.undo(view);
+        let doc = self.document_of_mut(view)?;
+        let before = doc.revision();
+        let result = doc.undo(view);
+        self.emit_document(view, before, result.as_ref().is_ok_and(Option::is_some));
         self.scroll_focus();
         result.map_err(EditorError::Commit)
     }
@@ -344,14 +373,20 @@ impl Editor {
     /// Redoes the change last undone in `view`'s document
     /// ([`Document::redo`]). `None` if there is nothing to redo.
     pub fn redo(&mut self, view: ViewId) -> Result<Option<Revision>, EditorError> {
-        let result = self.document_of_mut(view)?.redo(view);
+        let doc = self.document_of_mut(view)?;
+        let before = doc.revision();
+        let result = doc.redo(view);
+        self.emit_document(view, before, result.as_ref().is_ok_and(Option::is_some));
         self.scroll_focus();
         result.map_err(EditorError::Commit)
     }
 
     /// Moves `view`'s document to history node `node` ([`Document::goto`]).
     pub fn goto(&mut self, view: ViewId, node: NodeId) -> Result<Option<Revision>, EditorError> {
-        let result = self.document_of_mut(view)?.goto(view, node);
+        let doc = self.document_of_mut(view)?;
+        let before = doc.revision();
+        let result = doc.goto(view, node);
+        self.emit_document(view, before, result.as_ref().is_ok_and(Option::is_some));
         self.scroll_focus();
         result.map_err(EditorError::Commit)
     }
@@ -530,6 +565,10 @@ impl Editor {
     /// sets the message. The event happens at the last time given to
     /// [`handle_at`](Self::handle_at).
     pub fn handle(&mut self, event: &Event) -> Effects {
+        self.delivering(|ed| ed.handle_inner(event))
+    }
+
+    fn handle_inner(&mut self, event: &Event) -> Effects {
         let mut fx = match event {
             Event::Resize { width, height } => {
                 self.screen = (*width, *height);
@@ -598,6 +637,9 @@ impl Editor {
             self.last_commit_ns = ns;
         }
         let changed = result.as_ref().is_ok_and(|&after| after != before);
+        if changed {
+            self.emit_document(view, before, true);
+        }
         Effects {
             text: changed,
             selection: changed,
@@ -654,6 +696,7 @@ impl Editor {
             Ok(Some(after)) => (true, after != before),
             _ => (false, false),
         };
+        self.emit_document(view, before, moved);
         let message = match result {
             Ok(Some(_)) => None,
             Ok(None) if redo => Some("already at the newest change".to_owned()),
@@ -692,10 +735,22 @@ impl Editor {
             Err(e) => Err(e.to_string()),
         };
         let changed = result.as_ref().is_ok_and(|&c| c);
+        if changed {
+            self.emit(EditorEvent::SelectionChanged { view });
+        }
         Effects {
             selection: changed,
             message: self.report(result.err()),
             ..Effects::default()
+        }
+    }
+
+    /// Queues the events of a change to `view`'s document since revision
+    /// `before` (see [`Editor::emit_change`]).
+    fn emit_document(&mut self, view: ViewId, before: Revision, selection: bool) {
+        if let Some(doc) = self.views.get(view).map(|v| v.doc) {
+            let after = self.documents.get(doc).map_or(before, Document::revision);
+            self.emit_change(view, doc, before, after, selection);
         }
     }
 
