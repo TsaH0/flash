@@ -26,6 +26,9 @@ crossterm = "0.29"
 arbitrary = "1"
 proptest = "1.12"
 criterion = "0.8"
+signal-hook = "0.3"
+tempfile = "3"
+rustix = { version = "1", features = ["pty", "termios", "fs"] }
 
 [patch.crates-io]
 # crop 0.4.3 plus one method, `Rope::chunk_at_byte` (O(log n), no allocation),

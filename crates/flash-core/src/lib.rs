@@ -9,6 +9,7 @@
 pub mod changeset;
 pub mod document;
 pub mod editor;
+pub mod file;
 pub mod motion;
 pub mod selection;
 pub mod text;

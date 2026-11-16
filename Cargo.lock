@@ -430,6 +430,7 @@ dependencies = [
  "serde_json",
  "slotmap",
  "smallvec",
+ "tempfile",
  "unicode-segmentation",
  "unicode-width",
 ]
