@@ -16,6 +16,8 @@ pub enum PromptKind {
     Command,
     /// A regex for a selection command.
     Regex(super::RegexAction),
+    /// A search pattern, searched as it is typed.
+    Search { backward: bool },
     /// A path to save this document to.
     SaveAs(DocumentId),
     /// Yes/no: overwrite this document's file, which changed on disk.

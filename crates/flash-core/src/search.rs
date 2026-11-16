@@ -99,6 +99,138 @@ impl Matcher {
         found
     }
 
+    /// Calls `f` with each non-empty match starting at or after `from`, in
+    /// order, until it returns `false`. The regex sees the whole text
+    /// (look-behind before `from` works). Iterates as
+    /// [`find_in`](Self::find_in) does. O(bytes searched), no allocation
+    /// beyond the regex's cache.
+    pub fn each_from(
+        &self,
+        text: &Text,
+        from: usize,
+        mut f: impl FnMut(Range<usize>) -> bool,
+    ) -> Result<(), TextError> {
+        text.check_offset(from)?;
+        let total = text.byte_len();
+        let mut pos = from;
+        while pos < total {
+            let Some(cursor) = TextCursor::at(text, pos) else {
+                break;
+            };
+            let mut input = Input::new(cursor);
+            input.set_start(pos);
+            let Some(m) = self.regex.find(input) else {
+                break;
+            };
+            if m.start() < m.end() {
+                if !f(m.start()..m.end()) {
+                    break;
+                }
+                pos = m.end();
+            } else if m.end() < total {
+                pos = m.end() + char_len(text, m.end());
+            } else {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// The first match starting at or after `from`, else (wrapping) the
+    /// first in the text. The flag says whether it wrapped.
+    pub fn next_after(&self, text: &Text, from: usize) -> Option<(Range<usize>, bool)> {
+        let mut found = None;
+        self.each_from(text, from, |m| {
+            found = Some(m);
+            false
+        })
+        .ok()?;
+        if let Some(m) = found {
+            return Some((m, false));
+        }
+        self.each_from(text, 0, |m| {
+            found = Some(m);
+            false
+        })
+        .ok()?;
+        found.filter(|m| m.start < from).map(|m| (m, true))
+    }
+
+    /// The last match starting before `before`, else (wrapping) the last
+    /// in the text. O(bytes before the match found), since regexes search
+    /// forward.
+    pub fn previous_before(&self, text: &Text, before: usize) -> Option<(Range<usize>, bool)> {
+        let (mut last_before, mut last) = (None, None);
+        self.each_from(text, 0, |m| {
+            if m.start < before {
+                last_before = Some(m.clone());
+            }
+            last = Some(m);
+            true
+        })
+        .ok()?;
+        match last_before {
+            Some(m) => Some((m, false)),
+            None => last.map(|m| (m, true)),
+        }
+    }
+
+    /// The edits replacing every non-empty match inside `range` (matches
+    /// must lie within it; the regex sees the whole text) with
+    /// `replacement`, where `$1`, `${name}`, and `$$` expand as in the
+    /// `regex` crate.
+    pub fn replacements(
+        &self,
+        text: &Text,
+        range: Range<usize>,
+        replacement: &str,
+    ) -> Result<Vec<(Range<usize>, String)>, TextError> {
+        text.check_offset(range.start)?;
+        text.check_offset(range.end)?;
+        let mut edits = Vec::new();
+        let mut caps = self.regex.create_captures();
+        let info = self.regex.group_info().clone();
+        let mut pos = range.start;
+        while pos < range.end {
+            let Some(cursor) = TextCursor::at(text, pos) else {
+                break;
+            };
+            let mut input = Input::new(cursor);
+            input.set_range(pos..range.end);
+            self.regex.search_captures(input, &mut caps);
+            let Some(m) = caps.get_match() else {
+                break;
+            };
+            let span = m.range();
+            if span.is_empty() {
+                if span.end >= range.end {
+                    break;
+                }
+                pos = span.end + char_len(text, span.end);
+                continue;
+            }
+            let mut with = String::new();
+            regex_cursor::regex_automata::util::interpolate::string(
+                replacement,
+                |i, dst| {
+                    if let Some(g) = caps.get_group(i) {
+                        dst.push_str(
+                            &text
+                                .slice(g.start..g.end)
+                                .map(|s| s.to_string())
+                                .unwrap_or_default(),
+                        );
+                    }
+                },
+                |name| info.to_index(regex_cursor::regex_automata::PatternID::ZERO, name),
+                &mut with,
+            );
+            pos = span.end;
+            edits.push((span, with));
+        }
+        Ok(edits)
+    }
+
     /// Whether `range` of `text` contains a match.
     pub fn is_match_in(&self, text: &Text, range: Range<usize>) -> Result<bool, TextError> {
         let slice = text.slice(range)?;
@@ -123,6 +255,111 @@ fn char_len_at(chunks: &[&str], starts: &[usize], pos: usize) -> usize {
         b if b < 0xF0 => 3,
         _ => 4,
     }
+}
+
+/// The length of the char at `pos` (< the text's length).
+fn char_len(text: &Text, pos: usize) -> usize {
+    match text.chunk_containing(pos) {
+        Some((chunk, start)) => match chunk.as_bytes()[pos - start] {
+            b if b < 0x80 => 1,
+            b if b < 0xE0 => 2,
+            b if b < 0xF0 => 3,
+            _ => 4,
+        },
+        None => 1,
+    }
+}
+
+/// A cursor over the whole text, one rope chunk at a time
+/// ([`Text::chunk_containing`], O(log n) per step, no allocation).
+struct TextCursor<'a> {
+    text: &'a Text,
+    chunk: &'a str,
+    offset: usize,
+    total: usize,
+}
+
+impl<'a> TextCursor<'a> {
+    /// On the chunk containing `pos`; `None` for an empty text.
+    fn at(text: &'a Text, pos: usize) -> Option<TextCursor<'a>> {
+        let total = text.byte_len();
+        let (chunk, offset) = text.chunk_containing(pos.min(total.checked_sub(1)?))?;
+        Some(TextCursor {
+            text,
+            chunk,
+            offset,
+            total,
+        })
+    }
+}
+
+impl Cursor for TextCursor<'_> {
+    fn chunk(&self) -> &[u8] {
+        self.chunk.as_bytes()
+    }
+
+    fn advance(&mut self) -> bool {
+        match self.text.chunk_containing(self.offset + self.chunk.len()) {
+            Some((chunk, offset)) => {
+                (self.chunk, self.offset) = (chunk, offset);
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn backtrack(&mut self) -> bool {
+        let Some(before) = self.offset.checked_sub(1) else {
+            return false;
+        };
+        match self.text.chunk_containing(before) {
+            Some((chunk, offset)) => {
+                (self.chunk, self.offset) = (chunk, offset);
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn total_bytes(&self) -> Option<usize> {
+        Some(self.total)
+    }
+
+    fn offset(&self) -> usize {
+        self.offset
+    }
+}
+
+/// `s` with every regex meta character escaped: a pattern matching `s`
+/// literally (for searching the selected text).
+pub fn escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(
+            c,
+            '\\' | '.'
+                | '+'
+                | '*'
+                | '?'
+                | '('
+                | ')'
+                | '|'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '^'
+                | '$'
+                | '#'
+                | '&'
+                | '-'
+                | '~'
+        ) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// A cursor over a list of non-empty chunks.
@@ -259,7 +496,86 @@ mod tests {
         }
     }
 
+    /// The reference: regex-automata over the whole string, searching
+    /// `from..`.
+    fn reference_from(pat: &str, s: &str, from: usize) -> Vec<Range<usize>> {
+        use regex_cursor::regex_automata::Input as RInput;
+        regex_cursor::regex_automata::meta::Regex::new(pat)
+            .unwrap()
+            .find_iter(RInput::new(s.as_bytes()).range(from..))
+            .filter(|m| m.start() < m.end())
+            .map(|m| m.range())
+            .collect()
+    }
+
+    #[test]
+    fn next_and_previous_wrap_around() {
+        let t = Text::from("ab foo cd foo ef");
+        let m = Matcher::new("foo").unwrap();
+        assert_eq!(m.next_after(&t, 0), Some((3..6, false)));
+        assert_eq!(m.next_after(&t, 4), Some((10..13, false)));
+        assert_eq!(m.next_after(&t, 11), Some((3..6, true)));
+        assert_eq!(m.previous_before(&t, 10), Some((3..6, false)));
+        assert_eq!(m.previous_before(&t, 3), Some((10..13, true)));
+        assert_eq!(Matcher::new("zz").unwrap().next_after(&t, 0), None);
+        assert_eq!(
+            Matcher::new("x").unwrap().next_after(&Text::from(""), 0),
+            None
+        );
+        // The regex sees the text before the start: no word boundary
+        // inside "afoo".
+        let t = Text::from("afoo foo");
+        let b = Matcher::new(r"\bfoo").unwrap();
+        assert_eq!(b.next_after(&t, 1), Some((5..8, false)));
+    }
+
+    #[test]
+    fn replacements_expand_captures() {
+        let t = Text::from("a=1, b=22; c=3");
+        let m = Matcher::new(r"(?P<k>\w)=(\d+)").unwrap();
+        let edits = m.replacements(&t, 0..t.byte_len(), "$2:${k}$$").unwrap();
+        assert_eq!(
+            edits,
+            [
+                (0..3, "1:a$".to_owned()),
+                (5..9, "22:b$".to_owned()),
+                (11..14, "3:c$".to_owned())
+            ]
+        );
+        // Only matches inside the range.
+        let inside = m.replacements(&t, 4..10, "x").unwrap();
+        assert_eq!(inside, [(5..9, "x".to_owned())]);
+        assert_eq!(escape("a.b*(c)"), r"a\.b\*\(c\)");
+        let lit = Matcher::new(&escape("1+1=2?")).unwrap();
+        assert_eq!(
+            lit.next_after(&Text::from("x 1+1=2? y"), 0),
+            Some((2..8, false))
+        );
+    }
+
     proptest! {
+        /// Matches from an offset, with the whole text as context, agree
+        /// with regex-automata on the whole string.
+        #[test]
+        fn each_from_matches_the_reference(
+            s in text_strategy(20),
+            at in any::<prop::sample::Index>(),
+            pat in prop::sample::select(vec![
+                "a", r"\s+", r"\w+", "é|e\u{301}", r"\n", ".", r"\bxyz\b", "(?m)^a", "ab|ba|é",
+            ]),
+        ) {
+            let from = crate::strategies::floor_boundary(&s, at.index(s.len() + 1));
+            let t = Text::from(s.as_str());
+            let m = Matcher::new(pat).unwrap();
+            let mut got = Vec::new();
+            m.each_from(&t, from, |r| {
+                got.push(r);
+                true
+            })
+            .unwrap();
+            prop_assert_eq!(got, reference_from(pat, &s, from));
+        }
+
         /// Same matches as the `regex` crate on the whole string.
         #[test]
         fn matches_regex_on_a_string(s in text_strategy(20), pat in prop::sample::select(vec![

@@ -22,10 +22,14 @@ use crossterm::cursor::{Hide, MoveTo, SetCursorStyle, Show};
 use crossterm::queue;
 use crossterm::style::{Attribute, Print, SetAttribute};
 use crossterm::terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate};
+use flash_core::search::Matcher;
 use flash_core::width::grapheme_width;
 use flash_core::{
     CursorShape, Direction, Document, Editor, Layout, Prompt, Selection, Text, View, key_name,
 };
+
+/// The most bytes of one drawn span searched for matches to underline.
+const HIGHLIGHT_MAX: usize = 4096;
 
 /// Builds frames into a buffer it keeps between frames.
 #[derive(Debug, Default)]
@@ -129,6 +133,7 @@ fn frame(out: &mut Vec<u8>, editor: &Editor, latency_ns: u64, use_layout: bool) 
                     out,
                     text,
                     selection,
+                    editor.search_highlight(),
                     r.start..r.end,
                     r.last,
                     y as u16,
@@ -159,6 +164,7 @@ fn frame(out: &mut Vec<u8>, editor: &Editor, latency_ns: u64, use_layout: bool) 
                     out,
                     text,
                     selection,
+                    editor.search_highlight(),
                     content,
                     true,
                     row as u16,
@@ -337,6 +343,7 @@ fn render_span(
     out: &mut Vec<u8>,
     text: &Text,
     selection: &Selection,
+    highlight: Option<&Matcher>,
     span: std::ops::Range<usize>,
     eol: bool,
     row: u16,
@@ -354,6 +361,19 @@ fn render_span(
     let Ok(graphemes) = text.graphemes(from, Direction::Forward) else {
         return Ok(());
     };
+    // Search matches to underline: those inside what this span draws
+    // (at most HIGHLIGHT_MAX bytes from where drawing starts).
+    let matches = highlight
+        .and_then(|m| {
+            m.find_in(
+                text,
+                from..content.end.min(from.saturating_add(HIGHLIGHT_MAX)),
+            )
+            .ok()
+        })
+        .unwrap_or_default();
+    let mut next_match = 0;
+    let mut underlined = false;
     let ranges = selection.ranges();
     let primary = selection.primary_index();
     // First range that can touch this line.
@@ -387,6 +407,23 @@ fn render_span(
         if column < left && cells == 0 {
             pos += g.len();
             continue;
+        }
+        while next_match < matches.len() && matches[next_match].end <= pos {
+            next_match += 1;
+        }
+        let under = matches
+            .get(next_match)
+            .is_some_and(|m| m.start <= pos && pos < m.end);
+        if under != underlined {
+            queue!(
+                out,
+                SetAttribute(if under {
+                    Attribute::Underlined
+                } else {
+                    Attribute::NoUnderline
+                })
+            )?;
+            underlined = under;
         }
         let mark = marked(pos);
         if mark != reversed {

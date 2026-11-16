@@ -13,6 +13,7 @@ use flash_core::width::grapheme_width;
 struct Screen {
     cells: Vec<Vec<char>>,
     reversed: Vec<Vec<bool>>,
+    underlined: Vec<Vec<bool>>,
     cursor: Option<(usize, usize)>,
     /// The last DECSCUSR cursor style (2 block, 4 underline, 6 bar).
     cursor_style: Option<usize>,
@@ -33,6 +34,8 @@ impl Screen {
         let s = std::str::from_utf8(bytes).expect("frames are UTF-8");
         let mut cells = vec![vec![' '; w]; h];
         let mut reversed = vec![vec![false; w]; h];
+        let mut underlined = vec![vec![false; w]; h];
+        let mut under = false;
         let (mut x, mut y, mut rev, mut shown) = (0usize, 0usize, false, false);
         let mut cursor_style = None;
         let mut prev: Option<char> = None;
@@ -72,8 +75,14 @@ impl Screen {
                     'm' => {
                         for n in if nums.is_empty() { vec![0] } else { nums } {
                             match n {
-                                0 | 27 => rev = false,
+                                0 => {
+                                    rev = false;
+                                    under = false;
+                                }
+                                27 => rev = false,
                                 7 => rev = true,
+                                4 => under = true,
+                                24 => under = false,
                                 _ => {}
                             }
                         }
@@ -112,15 +121,18 @@ impl Screen {
             );
             cells[y][x] = c;
             reversed[y][x] = rev;
+            underlined[y][x] = under;
             if cw == 2 {
                 cells[y][x + 1] = '\0';
                 reversed[y][x + 1] = rev;
+                underlined[y][x + 1] = under;
             }
             x += cw;
         }
         Screen {
             cells,
             reversed,
+            underlined,
             cursor: shown.then_some((x, y)),
             cursor_style,
         }
@@ -382,6 +394,35 @@ fn soft_wrap_scrolls_by_rows_inside_a_long_line() {
     ed.handle(&plain_key(KeyCode::Home));
     let view = ed.view(ed.focus().unwrap()).unwrap();
     assert_eq!((view.top(), view.top_row()), (0, 0));
+}
+
+#[test]
+fn search_matches_are_underlined_until_cleared() {
+    let mut ed = editor_with("foo bar foo\nxfoo", 20, 4);
+    // Normal mode, as typed.
+    ed.handle(&plain_key(KeyCode::Esc));
+    for c in "/foo".chars() {
+        ed.handle(&plain_key(KeyCode::Char(c)));
+    }
+    ed.handle(&plain_key(KeyCode::Enter));
+    let s = screen(&ed);
+    let under = |y: usize| -> String {
+        (0..20)
+            .map(|x| if s.underlined[y][x] { 'u' } else { '.' })
+            .collect()
+    };
+    assert_eq!(under(0), "uuu.....uuu.........");
+    assert_eq!(under(1), ".uuu................");
+    ed.run_named(
+        "search-clear",
+        &flash_core::Context {
+            view: None,
+            count: None,
+            arg: None,
+        },
+    );
+    let s = screen(&ed);
+    assert!(s.underlined.iter().flatten().all(|&u| !u));
 }
 
 fn plain_key(code: KeyCode) -> Event {

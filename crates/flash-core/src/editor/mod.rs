@@ -42,6 +42,7 @@ mod command;
 mod commands;
 mod config;
 mod event;
+mod find;
 mod hooks;
 mod ids;
 mod keymap;
@@ -55,6 +56,7 @@ pub use command::{CommandError, CommandFn, CommandId, CommandInfo, Commands, Con
 pub use commands::{Request, SaveSnapshot};
 pub use config::{ConfigError, DEFAULT_CONFIG};
 pub use event::{Event, KeyCode, KeyEvent, Modifiers};
+pub use find::{INLINE_MAX as SEARCH_INLINE_MAX, SearchDone, SearchJob};
 pub use hooks::{EditorEvent, EventKinds, HookFn, HookId, MAX_ROUNDS};
 pub use ids::{DocumentId, ViewId};
 pub use keymap::{
@@ -226,6 +228,8 @@ pub struct Editor {
     count: Option<std::num::NonZeroUsize>,
     /// `:wq`: quit once the pending save succeeds.
     quit_after_save: bool,
+    /// Search state: the pattern, highlighting, an incremental search.
+    search: find::Search,
     config_errors: Vec<ConfigError>,
     /// Wall time of the last commit, for instrumentation only.
     last_commit_ns: u64,
@@ -255,6 +259,7 @@ impl Editor {
             keymap: Keymap::default(),
             count: None,
             quit_after_save: false,
+            search: find::Search::default(),
             config_errors: Vec::new(),
             last_commit_ns: 0,
         };
@@ -698,6 +703,8 @@ impl Editor {
             },
             Event::Key(key) => self.key(*key),
         };
+        // The search prompt's input changed: search again.
+        fx = fx.or(self.search_incremental());
         if let Some(view) = self.focus {
             if self.prompt.is_none() {
                 fx = fx.or(self.enforce_min(view));

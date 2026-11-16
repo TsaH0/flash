@@ -363,6 +363,12 @@ impl Text {
         }
     }
 
+    /// The chunk containing byte `byte` and its start offset, or `None` if
+    /// `byte >= byte_len()`. O(log n), no allocation.
+    pub(crate) fn chunk_containing(&self, byte: usize) -> Option<(&str, usize)> {
+        self.rope.chunk_at_byte(byte)
+    }
+
     /// The chunk containing byte `byte`, or `None` if `byte >= byte_len()`.
     /// O(log n), no allocation.
     fn chunk_at(&self, byte: usize) -> Option<Chunk<'_>> {

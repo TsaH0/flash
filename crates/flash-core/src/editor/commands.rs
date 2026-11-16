@@ -36,6 +36,9 @@ pub enum Request {
     /// Read the user's config file again and pass it to
     /// [`Editor::load_config`].
     LoadConfig,
+    /// Run this search (any thread: [`SearchJob::run`](super::SearchJob::run))
+    /// and pass the result to [`Editor::search_done`].
+    Search(super::SearchJob),
 }
 
 /// What a save off the main thread writes: taken by
@@ -444,6 +447,21 @@ impl Editor {
     /// (`name value`; without a value, show it).
     pub(crate) fn command_line(&mut self, line: &str) -> Effects {
         let line = line.trim();
+        // `s/pattern/replacement/` and `%s/…/…/` (any delimiter that is
+        // not a letter, digit, or space).
+        let substitution = |rest: &str| {
+            rest.chars()
+                .next()
+                .is_some_and(|c| !c.is_alphanumeric() && !c.is_whitespace())
+        };
+        if let Some(view) = self.focus {
+            if let Some(spec) = line.strip_prefix("%s").filter(|r| substitution(r)) {
+                return self.replace(view, true, spec);
+            }
+            if let Some(spec) = line.strip_prefix('s').filter(|r| substitution(r)) {
+                return self.replace(view, false, spec);
+            }
+        }
         let (name, arg) = match line.split_once(' ') {
             Some((name, arg)) => (name, Some(arg.trim()).filter(|a| !a.is_empty())),
             None => (line, None),
@@ -463,6 +481,7 @@ impl Editor {
                 self.run_named("save", &cx(arg))
             }
             "o" | "e" => self.run_named("open", &cx(arg)),
+            "noh" | "nohlsearch" => self.run_named("search-clear", &cx(None)),
             "set" | "setlocal" => {
                 let scope = if name == "set" {
                     Scope::Global
@@ -508,6 +527,9 @@ impl Editor {
         };
         let input = prompt.input().to_owned();
         match prompt.kind() {
+            PromptKind::Search { .. } => {
+                fx = fx.or(self.search_closed(yes));
+            }
             _ if !yes => {
                 fx.message = self.report(None::<String>);
             }

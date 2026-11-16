@@ -196,6 +196,56 @@ static COMMANDS: &[(&str, &str, Body)] = &[
         |ed, cx| on_view(ed, cx, |ed, v| ed.add_cursor(v, Direction::Backward)),
     ),
     (
+        "search",
+        "Search forward as a pattern is typed (Enter keeps the match).",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.search_prompt(v, false)),
+    ),
+    (
+        "search-backward",
+        "Search backward as a pattern is typed.",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.search_prompt(v, true)),
+    ),
+    (
+        "search-next",
+        "Select the next match of the search pattern.",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.search_next(v, false, false)),
+    ),
+    (
+        "search-previous",
+        "Select the match of the search pattern the other way.",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.search_next(v, true, false)),
+    ),
+    (
+        "extend-search-next",
+        "Add the next match of the search pattern as a selection.",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.search_next(v, false, true)),
+    ),
+    (
+        "extend-search-previous",
+        "Add the match the other way as a selection.",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.search_next(v, true, true)),
+    ),
+    (
+        "search-selection",
+        "Search for the primary selection's text.",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.search_selection(v)),
+    ),
+    (
+        "search-clear",
+        "Stop highlighting the search pattern's matches.",
+        |ed, _| ed.search_clear(),
+    ),
+    (
+        "replace",
+        "Replace in the selections: the argument is /pattern/replacement/.",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.replace(v, false, cx.arg.unwrap_or(""))),
+    ),
+    (
+        "replace-all",
+        "Replace in the whole text: the argument is /pattern/replacement/.",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.replace(v, true, cx.arg.unwrap_or(""))),
+    ),
+    (
         "keep-primary",
         "Keep only the primary selection.",
         |ed, cx| on_view(ed, cx, |ed, v| ed.collapse_to_primary(v)),

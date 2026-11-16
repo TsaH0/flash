@@ -37,11 +37,12 @@ use crossterm::terminal;
 use flash_app::io::{Done, Io};
 use flash_app::latency::{Stages, Timing, event_time};
 use flash_app::requests::{self, Outcome, Settings};
+use flash_app::searcher::Searcher;
 use flash_core::trace::{
     self, DEFAULT_MAX_LINE, TRACE_VERSION, TraceEntry, TraceHeader, TraceReader, TraceSource,
     TraceWriter,
 };
-use flash_core::{Document, Editor, Text, Timestamp, file};
+use flash_core::{Document, Editor, Request, Text, Timestamp, file};
 use flash_term::{Renderer, convert, terminal as term};
 use signal_hook::consts::signal::{SIGCONT, SIGHUP, SIGINT, SIGSTOP, SIGTERM, SIGTSTP};
 use signal_hook::iterator::Signals;
@@ -158,6 +159,8 @@ enum Msg {
     Signal(i32),
     /// A save or open finished on the I/O worker.
     Io(Done),
+    /// A search finished on the search worker.
+    Search(flash_core::SearchDone),
 }
 
 fn nanos(d: Duration) -> u64 {
@@ -229,6 +232,12 @@ fn run(path: Option<&Path>, settings: &Settings) -> Result<Exit, String> {
     editor.open_document(document);
 
     let (tx, rx) = mpsc::channel();
+    // Searches of large documents run here (latest wins).
+    let searcher = {
+        let tx = tx.clone();
+        Searcher::spawn(move |done| tx.send(Msg::Search(done)).is_ok())
+            .map_err(|e| format!("search thread: {e}"))?
+    };
     // Saves and opens run here, off the main loop (PLAN 2.8).
     let mut io_worker = {
         let tx = tx.clone();
@@ -276,6 +285,7 @@ fn run(path: Option<&Path>, settings: &Settings) -> Result<Exit, String> {
         &mut editor,
         &rx,
         &mut io_worker,
+        &searcher,
         &mut stages,
         &mut recording,
         settings,
@@ -348,6 +358,7 @@ fn event_loop(
     editor: &mut Editor,
     rx: &Receiver<Msg>,
     io_worker: &mut Io,
+    searcher: &Searcher,
     stages: &mut Stages,
     recording: &mut Recording,
     settings: &Settings,
@@ -356,7 +367,10 @@ fn event_loop(
     let result = run_loop(
         editor,
         rx,
-        io_worker,
+        Workers {
+            io: io_worker,
+            searcher,
+        },
         stages,
         &mut entries,
         recording,
@@ -366,10 +380,16 @@ fn event_loop(
     result
 }
 
+/// The threads the main loop hands work to.
+struct Workers<'a> {
+    io: &'a mut Io,
+    searcher: &'a Searcher,
+}
+
 fn run_loop(
     editor: &mut Editor,
     rx: &Receiver<Msg>,
-    io_worker: &mut Io,
+    workers: Workers<'_>,
     stages: &mut Stages,
     entries: &mut Vec<TraceEntry>,
     recording: &mut Recording,
@@ -421,10 +441,15 @@ fn run_loop(
                 }
                 Msg::Signal(SIGCONT) => full_redraw = true,
                 Msg::Signal(sig) => return Ok(Exit::Signal(sig)),
-                Msg::Io(done) => redraw |= io_worker.complete(editor, done).needs_redraw(),
+                Msg::Io(done) => redraw |= workers.io.complete(editor, done).needs_redraw(),
+                Msg::Search(done) => redraw |= editor.search_done(done).needs_redraw(),
             }
             for request in editor.take_requests() {
-                let request = match io_worker.submit(editor, request) {
+                if let Request::Search(job) = request {
+                    workers.searcher.submit(job);
+                    continue;
+                }
+                let request = match workers.io.submit(editor, request) {
                     Ok(fx) => {
                         redraw |= fx.needs_redraw();
                         continue;
@@ -539,8 +564,14 @@ fn replay(trace_path: &Path, config: Option<PathBuf>) -> Result<(), String> {
         let entry = entry.map_err(at)?;
         sink.clear();
         let t0 = Instant::now();
-        let fx = editor.handle_at(&entry.event, Timestamp::from_nanos(entry.t_ns));
-        editor.take_requests();
+        let mut fx = editor.handle_at(&entry.event, Timestamp::from_nanos(entry.t_ns));
+        // Searches run here, synchronously, so the replay is exact; every
+        // other request is dropped (a replay never touches a file).
+        for request in editor.take_requests() {
+            if let Request::Search(job) = request {
+                fx = fx.or(editor.search_done(job.run()));
+            }
+        }
         let t1 = Instant::now();
         let (mut layout, mut flush, mut bytes) = (0, 0, 0);
         if fx.needs_redraw() {

@@ -310,6 +310,26 @@ fn a_large_save_does_not_block_typing() {
     s.assert_restored();
 }
 
+/// Search on a 1 MB file runs on the search thread (PLAN Stage 7
+/// acceptance: search works on `medium` without blocking input): the
+/// match at the end is selected and the status line shows its line.
+#[test]
+fn searching_a_large_file_finds_the_match() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = dir.path().join("big.txt");
+    let filler = "abcdefghij klmnopqrst uvwxyz 0123456789 abcdefghij klmnopq\n";
+    let lines = (1 << 20) / filler.len() + 1;
+    fs::write(&doc, format!("{}needle here\n", filler.repeat(lines))).unwrap();
+    let mut s = Session::start(&[&doc], &[]);
+    s.wait_ready();
+    s.send(b"/needle\r");
+    let want = format!("  {}:", lines + 1);
+    s.wait_until("the match", |s| s.text().contains(&want));
+    s.send(b"\x11");
+    assert!(s.wait_exit().success(), "{}", s.stderr());
+    s.assert_restored();
+}
+
 #[test]
 fn ctrl_z_suspends_and_continuing_resumes() {
     let mut s = Session::start(&[], &[]);
