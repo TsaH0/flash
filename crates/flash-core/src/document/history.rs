@@ -336,11 +336,15 @@ impl History {
 
     /// Whether a commit from `view` recorded as `record` merges into the
     /// head node.
+    ///
+    /// Invariant: while a group is open the head is the newest node (every
+    /// move closes the group), so a merge never rewrites a node with
+    /// children.
     pub(crate) fn merges(&self, view: ViewId, record: Record) -> bool {
+        debug_assert!(self.open.is_none() || self.head.0 == self.nodes.len() - 1);
         let head = self.head_node();
         record.group
             && self.open == Some(view)
-            && self.head.0 == self.nodes.len() - 1
             && self.clamp(record.time).0 - head.time.0 <= nanos(self.group_pause)
     }
 

@@ -107,6 +107,12 @@ impl RevisionLog {
         self.entries.is_empty()
     }
 
+    /// The logged entries, oldest first (for tests).
+    #[cfg(test)]
+    pub(crate) fn entries(&self) -> impl Iterator<Item = &(Revision, ChangeSet)> {
+        self.entries.iter()
+    }
+
     /// The oldest revision positions can be mapped from, given that the
     /// document is at `current`: the revision before the first entry, or
     /// `current` itself when the log is empty.

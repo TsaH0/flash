@@ -35,6 +35,8 @@ use history::{Path as HistoryPath, Plan};
 pub use revision::{MapError, Revision, RevisionLog};
 
 #[cfg(test)]
+mod history_proptests;
+#[cfg(test)]
 mod history_tests;
 #[cfg(test)]
 mod proptests;
