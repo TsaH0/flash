@@ -92,6 +92,12 @@ fn run(fx: &Fixture, width: u16, height: u16) -> Vec<u64> {
     let mut renderer = Renderer::new();
     let mut sink: Vec<u8> = Vec::with_capacity(1 << 16);
     let mut samples = Vec::with_capacity(entries.len());
+    // The pattern types: enter insert mode first (untimed), so the run
+    // measures what Stage 6's did.
+    editor.handle_at(
+        &flash_core::Event::Key(KeyEvent::plain(KeyCode::Char('i'))),
+        Timestamp::ZERO,
+    );
     for entry in &entries {
         sink.clear();
         let start = Instant::now();

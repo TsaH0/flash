@@ -32,6 +32,7 @@ fn editor_with(s: &str, path: Option<&str>) -> (Editor, DocumentId, ViewId) {
     let mut ed = Editor::new(40, 10);
     let doc = ed.open(Text::from(s), path.map(PathBuf::from));
     let view = ed.open_view(doc).unwrap();
+    super::tests::insert_mode(&mut ed, view);
     (ed, doc, view)
 }
 
@@ -292,6 +293,7 @@ fn open_requests_and_results() {
 fn closing_views_and_the_last_view() {
     let (mut ed, doc, a) = editor_with("abc", None);
     let b = ed.open_view(doc).unwrap();
+    super::tests::insert_mode(&mut ed, b);
     typed(&mut ed, "x");
     // Another view remains: no question.
     ed.handle(&ctrl('w'));

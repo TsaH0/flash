@@ -12,6 +12,8 @@ use super::{DocumentId, ViewId};
 pub enum PromptKind {
     /// A path to open.
     Open,
+    /// A command line: `name [argument]`.
+    Command,
     /// A path to save this document to.
     SaveAs(DocumentId),
     /// Yes/no: overwrite this document's file, which changed on disk.

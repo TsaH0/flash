@@ -28,6 +28,8 @@ fn save_open_and_conflict_round_trip() {
     let view = ed.focus().unwrap();
     let doc = ed.view(view).unwrap().doc();
     assert!(ed.document(doc).unwrap().bom());
+    // Views start in normal mode: `i` to insert.
+    ed.handle(&key('i', Modifiers::NONE));
     ed.handle(&key('x', Modifiers::NONE));
     ed.handle(&key('s', Modifiers::CTRL));
     run_requests(&mut ed);

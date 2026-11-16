@@ -40,11 +40,11 @@ mod builtin;
 mod column;
 mod command;
 mod commands;
+mod config;
 mod event;
 mod hooks;
 mod ids;
 mod keymap;
-mod keys;
 mod mode;
 mod options;
 mod owner;
@@ -53,6 +53,7 @@ mod prompt;
 pub use column::LineAnchor;
 pub use command::{CommandError, CommandFn, CommandId, CommandInfo, Commands, Context};
 pub use commands::Request;
+pub use config::{ConfigError, DEFAULT_CONFIG};
 pub use event::{Event, KeyCode, KeyEvent, Modifiers};
 pub use hooks::{EditorEvent, EventKinds, HookFn, HookId, MAX_ROUNDS};
 pub use ids::{DocumentId, ViewId};
@@ -60,7 +61,7 @@ pub use keymap::{
     Action, Bind, KeyError, KeySeq, Keymap, Resolved, Step, key_name, normalize, parse_key,
     parse_sequence,
 };
-pub use mode::ModeId;
+pub use mode::{CursorShape, ModeError, ModeFlags, ModeId, ModeInfo, Modes};
 pub use options::{
     OptionError, OptionId, OptionInfo, OptionKind, OptionValue, Options, Scope, ViewOptions,
 };
@@ -89,6 +90,7 @@ pub struct View {
     height: u16,
     /// The view's resolved built-in options.
     options: ViewOptions,
+    mode: ModeId,
 }
 
 impl View {
@@ -121,6 +123,11 @@ impl View {
     pub fn options(&self) -> &ViewOptions {
         &self.options
     }
+
+    /// The view's mode.
+    pub fn mode(&self) -> ModeId {
+        self.mode
+    }
 }
 
 /// What handling one event changed, so the frontend knows what to do.
@@ -142,6 +149,10 @@ pub struct Effects {
     pub requests: bool,
     /// The editor should exit.
     pub quit: bool,
+    /// The focused view's mode changed.
+    pub mode: bool,
+    /// A key sequence or a count is pending (shown on the status line).
+    pub pending: bool,
 }
 
 impl Effects {
@@ -156,12 +167,21 @@ impl Effects {
             prompt: self.prompt || other.prompt,
             requests: self.requests || other.requests,
             quit: self.quit || other.quit,
+            mode: self.mode || other.mode,
+            pending: self.pending || other.pending,
         }
     }
 
     /// Whether anything visible changed.
     pub fn needs_redraw(&self) -> bool {
-        self.text || self.selection || self.scroll || self.resize || self.message || self.prompt
+        self.text
+            || self.selection
+            || self.scroll
+            || self.resize
+            || self.message
+            || self.prompt
+            || self.mode
+            || self.pending
     }
 }
 
@@ -183,6 +203,12 @@ pub struct Editor {
     options: Options,
     commands: Commands,
     hooks: hooks::Hooks,
+    modes: Modes,
+    keymap: Keymap,
+    /// A count typed before a command.
+    count: Option<std::num::NonZeroUsize>,
+    /// `:wq`: quit once the pending save succeeds.
+    quit_after_save: bool,
     /// Wall time of the last commit, for instrumentation only.
     last_commit_ns: u64,
 }
@@ -207,10 +233,39 @@ impl Editor {
             options: Options::with_builtins(),
             commands: Commands::default(),
             hooks: hooks::Hooks::default(),
+            modes: Modes::default(),
+            keymap: Keymap::default(),
+            count: None,
+            quit_after_save: false,
             last_commit_ns: 0,
         };
         builtin::register(&mut editor);
+        editor.register_builtin_modes();
+        // The native hook consumer: when a view closes, a key sequence or
+        // count typed for it does not carry over to the next view.
+        editor.subscribe(EventKinds::VIEW, Owner::BUILTIN, |ed, events| {
+            if events
+                .iter()
+                .any(|e| matches!(e, EditorEvent::ViewClosed { .. }))
+            {
+                ed.keymap.cancel();
+                ed.count = None;
+            }
+            Effects::default()
+        });
+        let errors = editor.apply_config(Owner::DEFAULTS, "default config", DEFAULT_CONFIG);
+        debug_assert!(errors.is_empty(), "default config: {errors:?}");
         editor
+    }
+
+    /// The key bindings.
+    pub fn keymap(&self) -> &Keymap {
+        &self.keymap
+    }
+
+    /// The count typed so far for the next command, if any.
+    pub fn count(&self) -> Option<std::num::NonZeroUsize> {
+        self.count
     }
 
     /// Opens `text` as a new document with no views. A text without a
@@ -259,10 +314,12 @@ impl Editor {
             width,
             height,
             options: self.options.resolve(None, Some(doc)),
+            mode: ModeId::NORMAL,
         });
         document.add_view(view);
         self.focus = Some(view);
         self.emit(EditorEvent::ViewOpened { view });
+        self.enforce_min(view);
         Ok(view)
     }
 
@@ -586,26 +643,108 @@ impl Editor {
                     ..Effects::default()
                 }
             }
-            _ if self.prompt.is_some() => self.prompt_event(event),
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('q'),
-                modifiers,
-            }) if modifiers.ctrl => self.quit_command(),
-            Event::Key(key) => match self.focus {
-                Some(view) => keys::handle_key(self, view, *key),
-                None => Effects::default(),
+            // A paste is one transaction and its own undo step (PLAN 2.9);
+            // into the prompt, its text (not into a yes/no question).
+            Event::Paste { text } => match self.prompt.as_mut() {
+                Some(p) if !p.kind().is_question() => {
+                    p.insert(text);
+                    Effects {
+                        prompt: true,
+                        ..Effects::default()
+                    }
+                }
+                Some(_) => Effects::default(),
+                None => match self.focus {
+                    Some(view) => {
+                        self.edit(view, false, |t, sel, _| Transaction::insert(t, sel, text))
+                    }
+                    None => Effects::default(),
+                },
             },
-            // A paste is one transaction and its own undo step (PLAN 2.9).
-            Event::Paste { text } => match self.focus {
-                Some(view) => self.edit(view, false, |t, sel, _| Transaction::insert(t, sel, text)),
-                None => Effects::default(),
-            },
+            Event::Key(key) => self.key(*key),
         };
         if let Some(view) = self.focus {
+            if self.prompt.is_none() {
+                fx = fx.or(self.enforce_min(view));
+            }
             fx.scroll |= self.scroll(view);
         }
         fx.requests = !self.requests.is_empty();
         fx
+    }
+
+    /// Resolves `key` in the input mode's keymap and runs what it is bound
+    /// to; an unbound printable key is typed in a mode that inserts
+    /// unbound keys. No key is handled anywhere else (PLAN 2.11).
+    fn key(&mut self, key: KeyEvent) -> Effects {
+        let mode = self.input_mode();
+        let timeout_ms = self
+            .focus
+            .and_then(|v| self.views.get(v))
+            .map_or(ViewOptions::default().sequence_timeout_ms, |v| {
+                v.options.sequence_timeout_ms
+            });
+        let resolved = self
+            .keymap
+            .feed(mode, key, self.now, timeout_ms.saturating_mul(1_000_000));
+        let mut fx = Effects::default();
+        if let Some(action) = resolved.first {
+            fx = fx.or(self.run_action(&action));
+        }
+        match resolved.step {
+            Step::Run(action) => fx = fx.or(self.run_action(&action)),
+            Step::Pending => fx.pending = true,
+            Step::Unbound => fx = fx.or(self.unbound(mode, key)),
+        }
+        fx
+    }
+
+    fn run_action(&mut self, action: &Action) -> Effects {
+        let count = self.count.take();
+        let cx = Context {
+            view: None,
+            count,
+            arg: action.arg.as_deref(),
+        };
+        let fx = self.run(action.command, &cx);
+        if self.count.is_some() {
+            Effects {
+                pending: true,
+                ..fx
+            }
+        } else {
+            fx
+        }
+    }
+
+    fn unbound(&mut self, mode: ModeId, key: KeyEvent) -> Effects {
+        self.count = None;
+        let printable = match key.code {
+            KeyCode::Char(c) if !key.modifiers.ctrl && !key.modifiers.alt => Some(c),
+            _ => None,
+        };
+        match printable {
+            Some(c) if self.modes.flags(mode).insert_unbound => {
+                let mut buf = [0; 4];
+                let s: &str = c.encode_utf8(&mut buf);
+                match (self.prompt.as_mut(), self.focus) {
+                    (Some(p), _) => {
+                        p.insert(s);
+                        Effects {
+                            prompt: true,
+                            ..Effects::default()
+                        }
+                    }
+                    (None, Some(view)) => {
+                        self.edit(view, true, |t, sel, _| Transaction::insert(t, sel, s))
+                    }
+                    (None, None) => Effects::default(),
+                }
+            }
+            // Where unbound keys are typed, other unbound keys are quiet.
+            _ if self.modes.flags(mode).insert_unbound => Effects::default(),
+            _ => self.notify(format_args!("{} is not bound", key_name(key))),
+        }
     }
 
     // ---- commands used by the key map ----
@@ -665,6 +804,7 @@ impl Editor {
             .views
             .get(view)
             .map_or(Self::DEFAULT_TAB_WIDTH, |v| v.options.tab_width);
+        let block = self.block_cursor(view);
         self.reselect(view, |text, sel| {
             let ranges = sel.ranges();
             let from = match direction {
@@ -676,17 +816,20 @@ impl Editor {
                 direction,
                 tab_width,
             };
-            let start = Range::point(from.head()).with_goal_column(from.goal_column());
+            let at = if block {
+                mode::cursor_grapheme(text, from)?
+            } else {
+                from.head()
+            };
+            let start = Range::point(at).with_goal_column(from.goal_column());
             let range = motion.apply_range(text, start, Movement::Move)?;
             Ok::<_, TextError>(sel.with_range(range))
         })
     }
 
-    /// Keeps only a cursor at the primary head.
+    /// Keeps only the primary selection.
     pub(crate) fn collapse_to_primary(&mut self, view: ViewId) -> Effects {
-        self.reselect(view, |_, sel| {
-            Ok::<_, Infallible>(Selection::point(sel.primary().head()))
-        })
+        self.reselect(view, |_, sel| Ok::<_, Infallible>(sel.primary_only()))
     }
 
     /// Undo (`redo` false) or redo for the key map: reports a change, or

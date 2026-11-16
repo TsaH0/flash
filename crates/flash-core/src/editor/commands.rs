@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use super::prompt::{Prompt, PromptKind};
-use super::{DocumentId, Editor, EditorError, Effects, Event, KeyCode, KeyEvent, ViewId};
+use super::{Context, DocumentId, Editor, EditorError, Effects, OptionError, Scope, ViewId};
 use crate::document::Document;
 use crate::file::{LoadError, Loaded, SaveError, SaveMethod, Saved};
 use crate::text::Text;
@@ -108,12 +108,19 @@ impl Editor {
             }
             Err(e) => format!("{}: {e}", display(&path)),
         };
-        Effects {
+        let fx = Effects {
             message: self.report(Some(message).filter(|m| !m.is_empty())),
             prompt: true,
             text: true,
             ..Effects::default()
+        };
+        // `:wq`: quit once the save went through.
+        if std::mem::take(&mut self.quit_after_save)
+            && self.documents.get(doc).is_some_and(|d| !d.is_modified())
+        {
+            return fx.or(self.quit_command());
         }
+        fx
     }
 
     /// Reports the outcome of a [`Request::Open`] of `path`: opens the
@@ -151,7 +158,7 @@ impl Editor {
         self.requests.push(request);
     }
 
-    fn open_prompt(&mut self, kind: PromptKind, label: impl Into<String>) -> Effects {
+    pub(crate) fn open_prompt(&mut self, kind: PromptKind, label: impl Into<String>) -> Effects {
         self.prompt = Some(Prompt::new(kind, label, String::new()));
         Effects {
             prompt: true,
@@ -348,72 +355,80 @@ impl Editor {
     }
 
     /// Handles an event while the prompt is open.
-    pub(crate) fn prompt_event(&mut self, event: &Event) -> Effects {
-        let Some(prompt) = self.prompt.as_mut() else {
-            return Effects::default();
-        };
-        let changed = Effects {
-            prompt: true,
-            ..Effects::default()
-        };
-        let kind = prompt.kind();
-        match event {
-            Event::Paste { text } if !kind.is_question() => {
-                prompt.insert(text);
-                changed
-            }
-            Event::Key(KeyEvent { code, modifiers }) => {
-                let (ctrl, alt) = (modifiers.ctrl, modifiers.alt);
-                match code {
-                    KeyCode::Esc => self.answer(false),
-                    KeyCode::Char('q') if ctrl && kind == PromptKind::Quit => self.answer(true),
-                    KeyCode::Char('y' | 'Y') if kind.is_question() && !ctrl && !alt => {
-                        self.answer(true)
-                    }
-                    KeyCode::Char('n' | 'N') if kind.is_question() && !ctrl && !alt => {
-                        self.answer(false)
-                    }
-                    _ if kind.is_question() => Effects::default(),
-                    KeyCode::Enter => self.answer(true),
-                    KeyCode::Char(c) if !ctrl && !alt => {
-                        let mut buf = [0; 4];
-                        prompt.insert(c.encode_utf8(&mut buf));
-                        changed
-                    }
-                    KeyCode::Backspace => {
-                        prompt.backspace();
-                        changed
-                    }
-                    KeyCode::Delete => {
-                        prompt.delete();
-                        changed
-                    }
-                    KeyCode::Left => {
-                        prompt.left();
-                        changed
-                    }
-                    KeyCode::Right => {
-                        prompt.right();
-                        changed
-                    }
-                    KeyCode::Home => {
-                        prompt.home();
-                        changed
-                    }
-                    KeyCode::End => {
-                        prompt.end();
-                        changed
-                    }
-                    _ => Effects::default(),
+    /// Applies `edit` to the open prompt's input.
+    pub(crate) fn prompt_edit(&mut self, edit: fn(&mut Prompt)) -> Effects {
+        match self.prompt.as_mut() {
+            Some(p) if !p.kind().is_question() => {
+                edit(p);
+                Effects {
+                    prompt: true,
+                    ..Effects::default()
                 }
             }
             _ => Effects::default(),
         }
     }
 
+    /// Runs a command line: `name [argument]`, with the aliases `w`
+    /// (save), `q`, `q!`, `wq`, `o`/`e` (open), `set` and `setlocal`
+    /// (`name value`; without a value, show it).
+    pub(crate) fn command_line(&mut self, line: &str) -> Effects {
+        let line = line.trim();
+        let (name, arg) = match line.split_once(' ') {
+            Some((name, arg)) => (name, Some(arg.trim()).filter(|a| !a.is_empty())),
+            None => (line, None),
+        };
+        let cx = |arg| Context {
+            view: None,
+            count: None,
+            arg,
+        };
+        match name {
+            "" => Effects::default(),
+            "w" => self.run_named("save", &cx(arg)),
+            "q" => self.run_named("quit", &cx(None)),
+            "q!" => self.run_named("quit-force", &cx(None)),
+            "wq" => {
+                self.quit_after_save = true;
+                self.run_named("save", &cx(arg))
+            }
+            "o" | "e" => self.run_named("open", &cx(arg)),
+            "set" | "setlocal" => {
+                let scope = if name == "set" {
+                    Scope::Global
+                } else {
+                    match self.focus {
+                        Some(v) => Scope::View(v),
+                        None => return self.notify("setlocal: no view"),
+                    }
+                };
+                let (option, value) = match arg.and_then(|a| a.split_once(' ')) {
+                    Some((o, v)) => (o, Some(v.trim())),
+                    None => (arg.unwrap_or(""), None),
+                };
+                match value {
+                    Some(value) => match self.set_option_text(scope, option, value) {
+                        Ok(()) => self.notify(format_args!("{option} = {value}")),
+                        Err(e) => self.notify(e),
+                    },
+                    None => match self.options.id(option) {
+                        Some(id) => {
+                            let value = self.option(id, self.focus);
+                            let shown =
+                                value.map_or_else(String::new, |v| self.options.format(id, v));
+                            self.notify(format_args!("{option} = {shown}"))
+                        }
+                        None => self.notify(OptionError::Unknown(option.to_owned())),
+                    },
+                }
+            }
+            _ => self.run_named(name, &cx(arg)),
+        }
+    }
+
     /// Closes the prompt with `yes` (Enter, `y`) or no (Esc, `n`) and acts
     /// on it.
-    fn answer(&mut self, yes: bool) -> Effects {
+    pub(crate) fn answer(&mut self, yes: bool) -> Effects {
         let Some(prompt) = self.prompt.take() else {
             return Effects::default();
         };
@@ -435,6 +450,9 @@ impl Editor {
                     path: input.into(),
                     force: false,
                 });
+            }
+            PromptKind::Command => {
+                fx = fx.or(self.command_line(&input));
             }
             PromptKind::Open | PromptKind::SaveAs(_) => {}
             PromptKind::Overwrite(doc) => {

@@ -27,7 +27,19 @@ fn editor(s: &str) -> (Editor, DocumentId, ViewId) {
     let mut ed = Editor::new(80, 24);
     let doc = ed.open(Text::from(s), None);
     let view = ed.open_view(doc).unwrap();
+    insert_mode(&mut ed, view);
     (ed, doc, view)
+}
+
+/// Puts `view` in insert mode with a cursor at the start of each
+/// selection, like `i` (the Stage 6 keys live on in insert mode).
+pub(crate) fn insert_mode(ed: &mut Editor, view: ViewId) {
+    ed.set_mode(view, ModeId::INSERT);
+    let sel = ed.selection(view).unwrap().clone();
+    let points = sel.ranges().iter().map(|r| crate::Range::point(r.start()));
+    let points = crate::Selection::new(points, sel.primary_index()).unwrap();
+    ed.set_selection(view, points).unwrap();
+    ed.flush_events();
 }
 
 fn text(ed: &Editor, doc: DocumentId) -> String {
@@ -79,7 +91,9 @@ fn alt_down_adds_cursor_and_typing_hits_both() {
     assert_eq!(ed.selection(view).unwrap().primary_index(), 1);
     ed.handle(&plain(KeyCode::Char('y')));
     assert_eq!(text(&ed, doc), "yab\nycd");
-    ed.handle(&plain(KeyCode::Esc));
+    // Stage 6's Esc (keep the primary) is the `keep-primary` command; Esc
+    // in insert mode now returns to normal mode.
+    ed.run_named("keep-primary", &Context::default());
     assert_eq!(ed.selection(view), Some(&Selection::point(5)));
 }
 
@@ -225,6 +239,7 @@ fn handle_without_focus_is_noop() {
 fn commit_from_background_view_maps_focused() {
     let (mut ed, doc, background) = editor("abc");
     let focused = ed.open_view(doc).unwrap();
+    insert_mode(&mut ed, focused);
     ed.set_selection(focused, Selection::point(2)).unwrap();
     let txn = Transaction::insert(
         ed.document(doc).unwrap().text(),

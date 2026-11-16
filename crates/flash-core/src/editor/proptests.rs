@@ -44,6 +44,28 @@ pub(crate) fn random_event(rng: &mut Xorshift) -> Event {
         KeyCode::Char('\u{1F1EF}'),
         KeyCode::Char('\u{200D}'),
         KeyCode::Char('\u{1F600}'),
+        KeyCode::Char('i'),
+        KeyCode::Char('a'),
+        KeyCode::Char('o'),
+        KeyCode::Char('O'),
+        KeyCode::Char('v'),
+        KeyCode::Char('w'),
+        KeyCode::Char('b'),
+        KeyCode::Char('h'),
+        KeyCode::Char('l'),
+        KeyCode::Char('j'),
+        KeyCode::Char('d'),
+        KeyCode::Char('c'),
+        KeyCode::Char('p'),
+        KeyCode::Char('u'),
+        KeyCode::Char('U'),
+        KeyCode::Char('C'),
+        KeyCode::Char(';'),
+        KeyCode::Char(','),
+        KeyCode::Char('%'),
+        KeyCode::Char('g'),
+        KeyCode::Char('3'),
+        KeyCode::Char(':'),
         KeyCode::Char('q'),
         KeyCode::Char('z'),
         KeyCode::Char('Z'),
@@ -106,6 +128,21 @@ fn check(ed: &Editor, after: &Event) {
         }
         if let Some(a) = current {
             check_anchor(doc.text(), a, view.left(), after);
+        }
+        // PLAN 2.5: after each command, a normal- or extend-mode view
+        // has no empty range except at the end of the text.
+        if ed.focus() == Some(id)
+            && ed.prompt().is_none()
+            && ed.modes().flags(view.mode()).min_grapheme
+        {
+            let len = doc.text().byte_len();
+            for r in sel.ranges() {
+                assert!(
+                    !r.is_empty() || r.head() == len,
+                    "empty {r:?} in {:?} after {after:?}",
+                    view.mode()
+                );
+            }
         }
     }
     if let Some(focus) = ed.focus() {
@@ -198,7 +235,8 @@ fn random_events_never_panic() {
         let mut now: u64 = 0;
         for i in 0..100 {
             if i % 50 == 0 {
-                ed.set_focus(views[rng.next(2)]).unwrap();
+                // A random key may have closed it (Ctrl+W, `:q`).
+                let _ = ed.set_focus(views[rng.next(2)]);
             }
             let event = random_event(&mut rng);
             // Mostly short steps, so typing groups; sometimes a long pause.

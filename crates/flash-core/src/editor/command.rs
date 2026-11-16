@@ -215,9 +215,12 @@ impl Editor {
         }
     }
 
-    /// Removes everything `owner` registered: commands, options, hooks
-    /// (and, from later tasks, modes and key layers).
+    /// Removes everything `owner` registered: modes (their views return to
+    /// normal mode), key layers, commands, options, and hooks. Built-in
+    /// modes stay even if their owner is removed.
     pub fn remove_owner(&mut self, owner: Owner) {
+        self.remove_modes_of(owner);
+        self.keymap.remove_owner(owner);
         self.commands.remove_owner(owner);
         self.options.remove_owner(owner);
         self.hooks.remove_owner(owner);

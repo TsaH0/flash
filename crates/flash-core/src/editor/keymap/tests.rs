@@ -98,6 +98,16 @@ fn notation_round_trips() {
     // Shift on a character key is the character's business.
     let shifted = KeyEvent::new(KeyCode::Char('U'), Modifiers::SHIFT);
     assert_eq!(normalize(shifted), k("U"));
+    let lower = KeyEvent::new(
+        KeyCode::Char('z'),
+        Modifiers {
+            shift: true,
+            ..Modifiers::ALT
+        },
+    );
+    assert_eq!(normalize(lower), k("A-Z"));
+    let digit = KeyEvent::new(KeyCode::Char('1'), Modifiers::SHIFT);
+    assert_eq!(normalize(digit), k("1"), "no single uppercase: unchanged");
     assert_eq!(normalize(k("S-left")), k("S-left"));
 }
 

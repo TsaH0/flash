@@ -192,8 +192,9 @@ fn type_save_and_quit() {
     fs::write(&doc, "abc\n").unwrap();
     let mut s = Session::start(&[&doc], &[]);
     s.wait_ready();
-    // 'x', Ctrl+S, Ctrl+Q (raw mode: XON/XOFF are plain keys).
-    s.send(b"x\x13\x11");
+    // 'i' (insert mode), 'x', Ctrl+S, Ctrl+Q (raw mode: XON/XOFF are
+    // plain keys).
+    s.send(b"ix\x13\x11");
     let status = s.wait_exit();
     assert!(status.success(), "{status:?}: {}", s.stderr());
     assert_eq!(fs::read_to_string(&doc).unwrap(), "xabc\n");
@@ -207,7 +208,7 @@ fn quitting_with_unsaved_changes_asks() {
     fs::write(&doc, "abc\n").unwrap();
     let mut s = Session::start(&[&doc], &[]);
     s.wait_ready();
-    s.send(b"x\x11");
+    s.send(b"ix\x11");
     s.wait_until("the quit question", |s| s.text().contains("quit anyway"));
     assert!(s.child.try_wait().unwrap().is_none(), "still running");
     s.send(b"y");
@@ -272,7 +273,7 @@ fn a_recorded_session_replays() {
     fs::write(&doc, "abc\n").unwrap();
     let mut s = Session::start(&[&doc], &[("FLASH_TRACE", trace.to_str().unwrap())]);
     s.wait_ready();
-    s.send(b"xy\x1b[C");
+    s.send(b"ixy\x1b[C");
     s.send(b"\x11");
     s.wait_until("the quit question", |s| s.text().contains("quit anyway"));
     s.send(b"y");
@@ -281,11 +282,11 @@ fn a_recorded_session_replays() {
     let lines: Vec<&str> = recorded.lines().collect();
     assert_eq!(
         lines.len(),
-        1 + 5,
-        "header + x, y, Right, Ctrl+Q, y: {recorded}"
+        1 + 6,
+        "header + i, x, y, Right, Ctrl+Q, y: {recorded}"
     );
     assert!(lines[0].contains(r#""flash_trace":1"#));
-    assert!(lines[5].contains(r#""code":{"char":"y"}"#), "{}", lines[5]);
+    assert!(lines[6].contains(r#""code":{"char":"y"}"#), "{}", lines[6]);
     let out = Command::new(env!("CARGO_BIN_EXE_flash"))
         .arg("--replay")
         .arg(&trace)
@@ -296,7 +297,7 @@ fn a_recorded_session_replays() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(String::from_utf8_lossy(&out.stdout).contains(r#""events":5"#));
+    assert!(String::from_utf8_lossy(&out.stdout).contains(r#""events":6"#));
     assert_eq!(fs::read_to_string(&doc).unwrap(), "abc\n");
 }
 
@@ -316,6 +317,8 @@ fn interactive_latency() {
     fs::write(&doc, &content).unwrap();
     let mut s = Session::start(&[&doc], &[("FLASH_LATENCY_LOG", &out)]);
     s.wait_ready();
+    // Typing is measured in insert mode.
+    s.send(b"i");
     let keys: &[&[u8]] = &[
         b"x", b"y", b"\x7f", b"\x1b[B", b"\x1b[C", b"z", b"\r", b"\x1b[A",
     ];

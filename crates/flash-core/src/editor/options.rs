@@ -355,6 +355,27 @@ impl Options {
         Ok(())
     }
 
+    /// Changes the default of `id` (the default config's `[options]`).
+    pub(crate) fn set_default(
+        &mut self,
+        id: OptionId,
+        value: OptionValue,
+    ) -> Result<(), OptionError> {
+        let d = self.def(id)?;
+        check(&d.name, d.kind, value)?;
+        if let Some(Some(d)) = self.defs.get_mut(id.0 as usize) {
+            d.default = value;
+        }
+        Ok(())
+    }
+
+    /// Clears every global value (a user config reload replaces them).
+    pub(crate) fn unset_globals(&mut self) {
+        for d in self.defs.iter_mut().flatten() {
+            d.global = None;
+        }
+    }
+
     /// Forgets a closed view's or document's values.
     pub(crate) fn forget_view(&mut self, view: ViewId) {
         self.views.remove(view);

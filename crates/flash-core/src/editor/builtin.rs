@@ -5,10 +5,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use std::num::NonZeroUsize;
+
 use super::command::{CommandFn, Context};
+use super::mode::{self, ModeId};
 use super::owner::Owner;
-use super::{Editor, Effects, Request, ViewId};
-use crate::{Direction, Motion, Movement, Transaction};
+use super::{Editor, Effects, Prompt, PromptKind, Request, ViewId};
+use crate::{Direction, Motion, Movement, Range, Selection, Transaction};
 
 type Body = fn(&mut Editor, &Context<'_>) -> Effects;
 
@@ -24,7 +27,9 @@ fn on_view(
 ) -> Effects {
     match view(ed, cx) {
         Some(v) if ed.views.contains_key(v) => f(ed, v),
-        _ => ed.notify("no view"),
+        // A view named but gone is an error; no view at all, a no-op.
+        Some(_) => ed.notify("no view"),
+        None => Effects::default(),
     }
 }
 
@@ -238,9 +243,262 @@ static COMMANDS: &[(&str, &str, Body)] = &[
     }),
 ];
 
+/// Commands of modes, selections, the prompt, and the command line.
+static MODAL: &[(&str, &str, Body)] = &[
+    ("normal-mode", "Enter normal mode.", |ed, cx| {
+        on_view(ed, cx, |ed, v| ed.set_mode(v, ModeId::NORMAL))
+    }),
+    (
+        "extend-mode",
+        "Toggle extend mode (motions extend the selections).",
+        |ed, cx| {
+            on_view(ed, cx, |ed, v| {
+                let to = if ed.views[v].mode == ModeId::EXTEND {
+                    ModeId::NORMAL
+                } else {
+                    ModeId::EXTEND
+                };
+                ed.set_mode(v, to)
+            })
+        },
+    ),
+    ("insert-mode", "Insert before each selection.", |ed, cx| {
+        on_view(ed, cx, |ed, v| {
+            let fx = ed.map_ranges(v, |_, r| Ok(Range::new(r.end(), r.start())));
+            fx.or(ed.set_mode(v, ModeId::INSERT))
+        })
+    }),
+    ("append-mode", "Insert after each selection.", |ed, cx| {
+        on_view(ed, cx, |ed, v| {
+            let fx = ed.map_ranges(v, |_, r| Ok(Range::new(r.start(), r.end())));
+            fx.or(ed.set_mode(v, ModeId::INSERT))
+        })
+    }),
+    (
+        "insert-line-start",
+        "Insert at the start of each cursor's line.",
+        |ed, cx| {
+            on_view(ed, cx, |ed, v| {
+                let fx = ed.collapse_to_cursors(v);
+                let fx = fx.or(ed.motion(v, Motion::LineStart, Movement::Move));
+                fx.or(ed.set_mode(v, ModeId::INSERT))
+            })
+        },
+    ),
+    (
+        "append-line-end",
+        "Insert at the end of each cursor's line.",
+        |ed, cx| {
+            on_view(ed, cx, |ed, v| {
+                let fx = ed.collapse_to_cursors(v);
+                let fx = fx.or(ed.motion(v, Motion::LineEnd, Movement::Move));
+                fx.or(ed.set_mode(v, ModeId::INSERT))
+            })
+        },
+    ),
+    (
+        "open-below",
+        "Open a line below each cursor and insert there.",
+        |ed, cx| {
+            on_view(ed, cx, |ed, v| {
+                let fx = ed.collapse_to_cursors(v);
+                let fx = fx.or(ed.motion(v, Motion::LineEnd, Movement::Move));
+                let fx = fx.or(ed.set_mode(v, ModeId::INSERT));
+                fx.or(ed.edit(v, true, |t, sel, ending| {
+                    Transaction::insert(t, sel, ending.as_str())
+                }))
+            })
+        },
+    ),
+    (
+        "open-above",
+        "Open a line above each cursor and insert there.",
+        |ed, cx| {
+            on_view(ed, cx, |ed, v| {
+                let fx = ed.collapse_to_cursors(v);
+                let fx = fx.or(ed.motion(v, Motion::LineStart, Movement::Move));
+                let fx = fx.or(ed.set_mode(v, ModeId::INSERT));
+                // One edit (so `O` and what is typed next undo together): the
+                // line breaks go in, each cursor stays before its own.
+                fx.or(ed.edit(v, true, |t, sel, ending| {
+                    let txn = Transaction::insert(t, sel, ending.as_str())?;
+                    let len = ending.as_str().len();
+                    let before = sel
+                        .ranges()
+                        .iter()
+                        .enumerate()
+                        .map(|(i, r)| Range::point(r.head() + i * len));
+                    Ok(match Selection::new(before, sel.primary_index()) {
+                        Ok(after) => Transaction::new(txn.changes().clone(), Some(after)),
+                        Err(_) => txn,
+                    })
+                }))
+            })
+        },
+    ),
+    (
+        "select-next-word",
+        "Select to the next word start (count words).",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.select_word(v, true, cx.count())),
+    ),
+    (
+        "select-previous-word",
+        "Select back to the word start (count words).",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.select_word(v, false, cx.count())),
+    ),
+    (
+        "select-line",
+        "Select each selection's whole lines; again, the next line too.",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.map_ranges(v, select_lines)),
+    ),
+    ("select-all", "Select the whole document.", |ed, cx| {
+        on_view(ed, cx, |ed, v| {
+            ed.reselect(v, |text, _| {
+                Ok::<_, String>(Selection::single(Range::new(0, text.byte_len())))
+            })
+        })
+    }),
+    (
+        "collapse",
+        "Reduce each selection to its cursor.",
+        |ed, cx| {
+            on_view(ed, cx, |ed, v| {
+                let block = ed.block_cursor(v);
+                ed.map_ranges(v, move |text, r| {
+                    if block {
+                        Ok(mode::block(text, mode::cursor_grapheme(text, r)?))
+                    } else {
+                        Ok(Range::point(r.head()))
+                    }
+                })
+            })
+        },
+    ),
+    (
+        "delete-selection",
+        "Cut every selection (to the register).",
+        |ed, cx| on_view(ed, cx, |ed, v| ed.copy(v, true)),
+    ),
+    (
+        "change-selection",
+        "Cut every selection and insert in its place.",
+        |ed, cx| {
+            on_view(ed, cx, |ed, v| {
+                let fx = ed.copy(v, true);
+                fx.or(ed.set_mode(v, ModeId::INSERT))
+            })
+        },
+    ),
+    (
+        "paste-after",
+        "Paste the register after each selection.",
+        |ed, cx| {
+            on_view(ed, cx, |ed, v| {
+                let fx = ed.map_ranges(v, |_, r| Ok(Range::point(r.end())));
+                fx.or(ed.paste_register(v))
+            })
+        },
+    ),
+    (
+        "paste-before",
+        "Paste the register before each selection.",
+        |ed, cx| {
+            on_view(ed, cx, |ed, v| {
+                let fx = ed.map_ranges(v, |_, r| Ok(Range::point(r.start())));
+                fx.or(ed.paste_register(v))
+            })
+        },
+    ),
+    (
+        "count",
+        "Add the argument digit to the count for the next command.",
+        |ed, cx| {
+            let digit = cx
+                .arg
+                .and_then(|a| a.parse::<usize>().ok())
+                .filter(|&d| d < 10);
+            let (Some(digit), prev) = (digit, cx.count.map(NonZeroUsize::get)) else {
+                return ed.notify("count: expected a digit");
+            };
+            ed.count = prev
+                .unwrap_or(0)
+                .checked_mul(10)
+                .and_then(|n| n.checked_add(digit))
+                .and_then(NonZeroUsize::new)
+                .or(cx.count);
+            Effects {
+                pending: true,
+                ..Effects::default()
+            }
+        },
+    ),
+    (
+        "command-line",
+        "Run a command by name: `name [argument]`.",
+        |ed, _| ed.open_prompt(PromptKind::Command, ":"),
+    ),
+    ("prompt-accept", "Accept the prompt's input.", |ed, _| {
+        ed.answer(true)
+    }),
+    ("prompt-cancel", "Close the prompt.", |ed, _| {
+        ed.answer(false)
+    }),
+    ("prompt-yes", "Answer yes.", |ed, _| ed.answer(true)),
+    ("prompt-no", "Answer no.", |ed, _| ed.answer(false)),
+    (
+        "prompt-backspace",
+        "Delete the character before the prompt cursor.",
+        |ed, _| ed.prompt_edit(Prompt::backspace),
+    ),
+    (
+        "prompt-delete",
+        "Delete the character after the prompt cursor.",
+        |ed, _| ed.prompt_edit(Prompt::delete),
+    ),
+    ("prompt-left", "Move the prompt cursor left.", |ed, _| {
+        ed.prompt_edit(Prompt::left)
+    }),
+    ("prompt-right", "Move the prompt cursor right.", |ed, _| {
+        ed.prompt_edit(Prompt::right)
+    }),
+    (
+        "prompt-home",
+        "Move the prompt cursor to the start.",
+        |ed, _| ed.prompt_edit(Prompt::home),
+    ),
+    (
+        "prompt-end",
+        "Move the prompt cursor to the end.",
+        |ed, _| ed.prompt_edit(Prompt::end),
+    ),
+];
+
+/// `r` widened to whole lines (with terminators); if it already is, one
+/// more line.
+fn select_lines(text: &crate::Text, r: Range) -> Result<Range, crate::TextError> {
+    let start = text.line_start(text.line_of_offset(r.start())?)?;
+    let last = if r.end() > r.start() {
+        r.end() - 1
+    } else {
+        r.end()
+    };
+    let line_end = |line: usize| -> Result<usize, crate::TextError> {
+        if line + 1 < text.line_count() {
+            text.line_start(line + 1)
+        } else {
+            Ok(text.byte_len())
+        }
+    };
+    let mut end = line_end(text.line_of_offset(last)?)?;
+    if (start, end) == (r.start(), r.end()) && end < text.byte_len() {
+        end = line_end(text.line_of_offset(end)?)?;
+    }
+    Ok(Range::new(start, end))
+}
+
 /// Registers every built-in command.
 pub(crate) fn register(ed: &mut Editor) {
-    for &(name, doc, body) in COMMANDS {
+    for &(name, doc, body) in COMMANDS.iter().chain(MODAL) {
         let run: Arc<CommandFn> = Arc::new(body);
         let registered = ed.commands.register(name, Owner::BUILTIN, doc, run);
         debug_assert!(registered.is_ok(), "built-in {name}: {registered:?}");
@@ -248,10 +506,14 @@ pub(crate) fn register(ed: &mut Editor) {
     for name in MOTIONS {
         for (prefix, movement) in [("move", Movement::Move), ("extend", Movement::Extend)] {
             let full = format!("{prefix}-{name}");
-            let doc = format!("{prefix} each selection: {name} (count repeats).");
+            let doc = format!(
+                "{prefix} each selection: {name} (count repeats; in normal and extend \
+                 mode the cursor is a grapheme)."
+            );
+            let extend = movement == Movement::Extend;
             let run: Arc<CommandFn> = Arc::new(move |ed: &mut Editor, cx: &Context<'_>| {
                 on_view(ed, cx, |ed, v| match motion_of(ed, v, name, cx.count()) {
-                    Some(m) => ed.motion(v, m, movement),
+                    Some(m) => ed.mode_motion(v, m, extend),
                     None => Effects::default(),
                 })
             });

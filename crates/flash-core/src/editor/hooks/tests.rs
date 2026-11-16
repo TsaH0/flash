@@ -12,7 +12,7 @@ fn editor(s: &str) -> (Editor, DocumentId, ViewId) {
     let mut ed = Editor::new(80, 24);
     let doc = ed.open(Text::from(s), None);
     let view = ed.open_view(doc).unwrap();
-    ed.flush_events();
+    crate::editor::tests::insert_mode(&mut ed, view);
     (ed, doc, view)
 }
 
@@ -88,10 +88,12 @@ fn subscribers_get_only_batches_of_their_kinds() {
     ed.close_view(second).unwrap();
     assert!(views.take().is_empty(), "direct calls wait for a flush");
     ed.flush_events();
+    // The whole batch: opening in normal mode widened the new cursor.
     assert_eq!(
         views.take(),
         [vec![
             EditorEvent::ViewOpened { view: second },
+            EditorEvent::SelectionChanged { view: second },
             EditorEvent::ViewClosed { view: second },
         ]]
     );
@@ -139,7 +141,7 @@ fn hooks_that_keep_causing_events_stop_after_the_round_limit() {
     let (mut ed, _, view) = editor("abcdefghijklmnopqrstuvwxyz");
     let calls = Rc::new(RefCell::new(0));
     let c = Rc::clone(&calls);
-    ed.subscribe(EventKinds::SELECTION, Owner(3), move |ed, _| {
+    let looping = ed.subscribe(EventKinds::SELECTION, Owner(3), move |ed, _| {
         *c.borrow_mut() += 1;
         ed.run_named("move-right", &Context::default())
     });
@@ -154,7 +156,7 @@ fn hooks_that_keep_causing_events_stop_after_the_round_limit() {
     assert_eq!(ed.selection(view).unwrap().primary().head(), 1 + MAX_ROUNDS);
     // The queue is empty again: the next key delivers normally.
     *calls.borrow_mut() = 0;
-    ed.unsubscribe(HookId(0));
+    ed.unsubscribe(looping);
     ed.handle(&key(KeyCode::Right));
     assert_eq!(*calls.borrow(), 0);
 }

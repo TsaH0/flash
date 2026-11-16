@@ -284,17 +284,25 @@ proptest! {
         let (mut replayed, view2) = start(reader.header(), text).unwrap();
         prop_assert_eq!(replay(&mut reader, &mut replayed).unwrap(), 200);
 
-        let (lv, ld) = live.view_document(view).unwrap();
-        let (rv, rd) = replayed.view_document(view2).unwrap();
-        prop_assert_eq!(ld.text(), rd.text());
-        prop_assert_eq!(ld.selection(view), rd.selection(view2));
-        prop_assert_eq!(ld.revision(), rd.revision());
-        prop_assert_eq!(ld.history().len(), rd.history().len());
-        prop_assert_eq!(ld.history().head(), rd.history().head());
+        // Both sessions closed the view (a random Ctrl+W), or neither.
+        match (live.view_document(view), replayed.view_document(view2)) {
+            (Some((lv, ld)), Some((rv, rd))) => {
+                prop_assert_eq!(ld.text(), rd.text());
+                prop_assert_eq!(ld.selection(view), rd.selection(view2));
+                prop_assert_eq!(ld.revision(), rd.revision());
+                prop_assert_eq!(ld.history().len(), rd.history().len());
+                prop_assert_eq!(ld.history().head(), rd.history().head());
+                prop_assert_eq!(lv.top(), rv.top());
+                prop_assert_eq!(lv.size(), rv.size());
+                prop_assert_eq!(lv.mode(), rv.mode());
+            }
+            (None, None) => {}
+            (l, r) => prop_assert!(false, "live view {:?}, replayed {:?}", l.is_some(), r.is_some()),
+        }
         prop_assert_eq!(live.now(), replayed.now());
-        prop_assert_eq!(lv.top(), rv.top());
-        prop_assert_eq!(lv.size(), rv.size());
         prop_assert_eq!(live.message(), replayed.message());
+        prop_assert_eq!(live.keymap().pending(), replayed.keymap().pending());
+        prop_assert_eq!(live.count(), replayed.count());
         prop_assert_eq!(live.should_quit(), replayed.should_quit());
     }
 }

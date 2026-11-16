@@ -26,8 +26,8 @@ use flash_core::internals::{
 use std::num::NonZeroU8;
 
 use flash_core::{
-    ChangeSet, Direction, Editor, Event, KeyCode, KeyEvent, Motion, Movement, Range, Selection,
-    Text, Timestamp, Transaction, ViewId,
+    ChangeSet, Direction, Editor, Event, KeyCode, KeyEvent, ModeId, Motion, Movement, Range,
+    Selection, Text, Timestamp, Transaction, ViewId,
 };
 
 struct Counting;
@@ -244,6 +244,10 @@ fn run_fixture(fx: &Fixture) -> Vec<Report> {
         let mut ed = Editor::new(80, 24);
         let doc = ed.open(base.snapshot(), None);
         let ids: Vec<ViewId> = (0..views).map(|_| ed.open_view(doc).unwrap()).collect();
+        // Insert mode: typing and point motions, as in Stage 6.
+        for &id in &ids {
+            ed.set_mode(id, ModeId::INSERT);
+        }
         ed.set_focus(ids[0]).unwrap();
         (ed, ids)
     };

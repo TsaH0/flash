@@ -11,6 +11,8 @@ fn editor(s: &str) -> (Editor, ViewId) {
     let mut ed = Editor::new(80, 24);
     let doc = ed.open(Text::from(s), None);
     let view = ed.open_view(doc).unwrap();
+    // Point cursors, as the motion commands give in insert mode.
+    crate::editor::tests::insert_mode(&mut ed, view);
     (ed, view)
 }
 

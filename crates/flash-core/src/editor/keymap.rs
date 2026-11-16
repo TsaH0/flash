@@ -84,16 +84,29 @@ const NAMED: &[(&str, KeyCode)] = &[
     ("minus", KeyCode::Char('-')),
 ];
 
-/// `key` as bindings see it: Shift dropped from character keys.
+/// `key` as bindings see it: on a character key Shift is folded into the
+/// character (`z` with Shift is `Z`, as most terminals already send it)
+/// and dropped.
 pub fn normalize(key: KeyEvent) -> KeyEvent {
     match key.code {
-        KeyCode::Char(_) => KeyEvent {
-            code: key.code,
-            modifiers: Modifiers {
-                shift: false,
-                ..key.modifiers
-            },
-        },
+        KeyCode::Char(c) => {
+            let c = if key.modifiers.shift {
+                let mut upper = c.to_uppercase();
+                match (upper.next(), upper.next()) {
+                    (Some(u), None) => u,
+                    _ => c,
+                }
+            } else {
+                c
+            };
+            KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers: Modifiers {
+                    shift: false,
+                    ..key.modifiers
+                },
+            }
+        }
         _ => key,
     }
 }

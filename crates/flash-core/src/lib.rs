@@ -32,10 +32,12 @@ pub use document::{
     RevisionLog, Timestamp,
 };
 pub use editor::{
-    CommandError, CommandId, CommandInfo, Commands, Context, DocumentId, Editor, EditorError,
-    Effects, Event, KeyCode, KeyEvent, LineAnchor, Modifiers, OptionError, OptionId, OptionInfo,
-    OptionKind, OptionValue, Options, Owner, Prompt, PromptKind, Request, Scope, View, ViewId,
-    ViewOptions,
+    Action, Bind, CommandError, CommandId, CommandInfo, Commands, ConfigError, Context,
+    CursorShape, DEFAULT_CONFIG, DocumentId, Editor, EditorError, EditorEvent, Effects, Event,
+    EventKinds, HookId, KeyCode, KeyError, KeyEvent, KeySeq, Keymap, LineAnchor, ModeError,
+    ModeFlags, ModeId, ModeInfo, Modes, Modifiers, OptionError, OptionId, OptionInfo, OptionKind,
+    OptionValue, Options, Owner, Prompt, PromptKind, Request, Resolved, Scope, Step, View, ViewId,
+    ViewOptions, key_name, parse_key, parse_sequence,
 };
 pub use motion::{Motion, Movement};
 pub use selection::{Range, Selection, SelectionError};
