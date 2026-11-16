@@ -43,6 +43,7 @@ mod commands;
 mod event;
 mod hooks;
 mod ids;
+mod keymap;
 mod keys;
 mod mode;
 mod options;
@@ -55,6 +56,10 @@ pub use commands::Request;
 pub use event::{Event, KeyCode, KeyEvent, Modifiers};
 pub use hooks::{EditorEvent, EventKinds, HookFn, HookId, MAX_ROUNDS};
 pub use ids::{DocumentId, ViewId};
+pub use keymap::{
+    Action, Bind, KeyError, KeySeq, Keymap, Resolved, Step, key_name, normalize, parse_key,
+    parse_sequence,
+};
 pub use mode::ModeId;
 pub use options::{
     OptionError, OptionId, OptionInfo, OptionKind, OptionValue, Options, Scope, ViewOptions,
