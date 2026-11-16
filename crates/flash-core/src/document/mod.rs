@@ -235,7 +235,7 @@ impl Document {
         let path = HistoryPath {
             up: vec![head],
             down: Vec::new(),
-            target: Some(parent),
+            target: parent,
         };
         self.commit_step(view, txn, Step::Move(path)).map(Some)
     }
@@ -248,12 +248,12 @@ impl Document {
         let Some(child) = self.history.head_node().last_child() else {
             return Ok(None);
         };
-        let node = &self.history.nodes_slice()[child.index()];
+        let node = &self.history.node_store()[child.index()];
         let txn = Transaction::new(node.forward().clone(), Some(node.after().clone()));
         let path = HistoryPath {
             up: Vec::new(),
             down: vec![child],
-            target: Some(child),
+            target: child,
         };
         self.commit_step(view, txn, Step::Move(path)).map(Some)
     }
@@ -272,7 +272,7 @@ impl Document {
             return Ok(None);
         }
         let path = self.history.path_to(target);
-        let nodes = self.history.nodes_slice();
+        let nodes = self.history.node_store();
         let steps = path
             .up
             .iter()

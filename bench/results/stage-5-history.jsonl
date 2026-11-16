@@ -1,0 +1,5 @@
+{"fixture":"medium","scenario":"1 cursor, grouped, 100000 keys","events":100000,"nodes":5880,"live_bytes":4228054,"history_bytes":3063430,"bytes_per_node":521.0,"p50_ns":557,"p99_ns":1438,"max_ns":48937}
+{"fixture":"medium","scenario":"1 cursor, grouped, 1000000 keys","events":1000000,"nodes":59867,"live_bytes":41197084,"history_bytes":31709020,"bytes_per_node":529.7,"p50_ns":604,"p99_ns":1276,"max_ns":326703}
+{"fixture":"medium","scenario":"1 cursor, every key a step, 100000 keys","events":100000,"nodes":95950,"live_bytes":37972176,"history_bytes":36807552,"bytes_per_node":383.6,"p50_ns":476,"p99_ns":1594,"max_ns":12857}
+{"fixture":"medium","scenario":"100 cursors, every key a step, 10000 keys","events":10000,"nodes":9532,"live_bytes":179311872,"history_bytes":172325600,"bytes_per_node":18078.6,"p50_ns":41021,"p99_ns":125303,"max_ns":316934}
+{"fixture":"medium","scenario":"10000 cursors, every key a step, 200 keys","events":200,"nodes":185,"live_bytes":401161128,"history_bytes":371595440,"bytes_per_node":2008624.0,"p50_ns":4474085,"p99_ns":8305606,"max_ns":8414950}

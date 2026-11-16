@@ -466,3 +466,65 @@ fn failed_commit_leaves_history_alone() {
     let node = doc.history().node(NodeId(1)).unwrap();
     assert_eq!(node.forward().len_after(), 4);
 }
+
+#[test]
+fn histories_longer_than_one_storage_chunk() {
+    // Node storage is chunked (256 per chunk); cross several boundaries.
+    let (mut doc, v) = doc_with_views("", 1);
+    let n = 700;
+    for i in 0..n {
+        insert(&mut doc, v[0], "x", Record::step(ms(i as u64 + 1)));
+    }
+    let h = doc.history();
+    assert_eq!(h.len(), n + 1);
+    assert_eq!(h.nodes().count(), n + 1);
+    for i in [255, 256, 257, 511, 512, n] {
+        let node = h.node(NodeId(i)).unwrap();
+        assert_eq!(node.depth(), i);
+        assert_eq!(node.time(), ms(i as u64));
+        assert_eq!(h.at_time(ms(i as u64)), NodeId(i));
+    }
+    assert!(h.node(NodeId(n + 1)).is_none());
+    doc.goto(v[0], NodeId(256)).unwrap();
+    assert_eq!(doc.text().byte_len(), 256);
+    doc.goto(v[0], NodeId(n)).unwrap();
+    assert_eq!(doc.text().byte_len(), n);
+    for _ in 0..n {
+        doc.undo(v[0]).unwrap().unwrap();
+    }
+    assert_eq!(text(&doc), "");
+    assert_eq!(doc.undo(v[0]), Ok(None));
+}
+
+#[test]
+fn extreme_ids_steps_and_times_do_not_panic() {
+    let (mut doc, v) = doc_with_views("abc", 1);
+    let max = Timestamp::from_nanos(u64::MAX);
+    insert(&mut doc, v[0], "x", Record::typing(max));
+    // Time cannot go past the maximum; later typing is clamped to it and
+    // keeps merging (a hostile clock can only make groups longer).
+    insert(&mut doc, v[0], "y", Record::typing(ms(1)));
+    assert_eq!(doc.history().len(), 2);
+    assert_eq!(doc.history().latest_time(), max);
+    assert_eq!(max.saturating_add(Duration::MAX), max);
+    assert_eq!(ms(1).saturating_sub(Duration::MAX), Timestamp::ZERO);
+    let h = doc.history();
+    assert_eq!(h.earlier(usize::MAX), NodeId::ROOT);
+    assert_eq!(h.later(usize::MAX), NodeId(1));
+    assert_eq!(h.at_time(max), NodeId(1));
+    assert_eq!(
+        doc.goto(v[0], NodeId(usize::MAX)),
+        Err(CommitError::NoSuchNode(NodeId(usize::MAX)))
+    );
+    doc.set_group_pause(Duration::MAX);
+    doc.set_group_pause(Duration::ZERO);
+    doc.checkpoint();
+    insert(&mut doc, v[0], "z", Record::typing(max));
+    insert(&mut doc, v[0], "w", Record::typing(max));
+    assert_eq!(
+        doc.history().len(),
+        3,
+        "zero pause still merges at equal times"
+    );
+    assert_eq!(text(&doc), "xyzwabc");
+}

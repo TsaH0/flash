@@ -21,6 +21,7 @@
 //! `group`, a selection change, a checkpoint, undo, redo, or a jump, so a
 //! merge only ever extends the newest node.
 
+use std::ops::{Index, IndexMut};
 use std::time::Duration;
 
 use crate::changeset::{ChangeSet, Op};
@@ -172,10 +173,83 @@ fn changeset_heap_bytes(c: &ChangeSet) -> usize {
     c.ops_capacity() * size_of::<Op>() + strings
 }
 
+/// Nodes per storage chunk (about 60 KB).
+const CHUNK: usize = 256;
+
+/// Node storage in fixed-size chunks, indexed by creation order. Pushing
+/// never moves existing nodes, so a commit's cost does not grow with the
+/// history: a plain `Vec` copies every node when it doubles (measured: 2 ms
+/// at 65,536 nodes, growing linearly).
+#[derive(Debug, Clone)]
+pub(crate) struct Nodes {
+    chunks: Vec<Vec<Node>>,
+    len: usize,
+}
+
+impl Nodes {
+    fn new(root: Node) -> Nodes {
+        let mut nodes = Nodes {
+            chunks: Vec::new(),
+            len: 0,
+        };
+        nodes.push(root);
+        nodes
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn get(&self, i: usize) -> Option<&Node> {
+        self.chunks.get(i / CHUNK)?.get(i % CHUNK)
+    }
+
+    fn push(&mut self, node: Node) {
+        if self.len % CHUNK == 0 {
+            self.chunks.push(Vec::with_capacity(CHUNK));
+        }
+        let last = self.chunks.len() - 1;
+        self.chunks[last].push(node);
+        self.len += 1;
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &Node> {
+        self.chunks.iter().flatten()
+    }
+
+    fn last(&self) -> &Node {
+        &self[self.len - 1]
+    }
+
+    /// Heap bytes of the storage itself (not of what nodes point to).
+    fn storage_bytes(&self) -> usize {
+        self.chunks.capacity() * size_of::<Vec<Node>>()
+            + self
+                .chunks
+                .iter()
+                .map(|c| c.capacity() * size_of::<Node>())
+                .sum::<usize>()
+    }
+}
+
+impl Index<usize> for Nodes {
+    type Output = Node;
+
+    fn index(&self, i: usize) -> &Node {
+        &self.chunks[i / CHUNK][i % CHUNK]
+    }
+}
+
+impl IndexMut<usize> for Nodes {
+    fn index_mut(&mut self, i: usize) -> &mut Node {
+        &mut self.chunks[i / CHUNK][i % CHUNK]
+    }
+}
+
 /// A document's undo tree, its head, and the open undo group.
 #[derive(Debug, Clone)]
 pub struct History {
-    nodes: Vec<Node>,
+    nodes: Nodes,
     head: NodeId,
     /// The view whose typing may merge into the head (always the newest
     /// node while set).
@@ -215,11 +289,11 @@ pub(crate) enum Plan {
 ///
 /// Invariant kept by [`History::apply`]: every ancestor of the head has
 /// its `last_child` on the path to the head.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct Path {
     pub(crate) up: Vec<NodeId>,
     pub(crate) down: Vec<NodeId>,
-    pub(crate) target: Option<NodeId>,
+    pub(crate) target: NodeId,
 }
 
 impl History {
@@ -230,7 +304,7 @@ impl History {
     /// A history whose root is a text of `len` bytes.
     pub(crate) fn new(len: usize) -> History {
         History {
-            nodes: vec![Node {
+            nodes: Nodes::new(Node {
                 parent: None,
                 last_child: None,
                 depth: 0,
@@ -239,7 +313,7 @@ impl History {
                 before: Selection::point(0),
                 after: Selection::point(0),
                 time: Timestamp::ZERO,
-            }],
+            }),
             head: NodeId::ROOT,
             open: None,
             group_pause: Self::DEFAULT_GROUP_PAUSE,
@@ -301,20 +375,28 @@ impl History {
     /// The newest node whose time is at most `time`, or the root. Node
     /// times never decrease in creation order, so this is a binary search.
     pub fn at_time(&self, time: Timestamp) -> NodeId {
-        let after = self.nodes.partition_point(|n| n.time <= time);
-        NodeId(after.saturating_sub(1))
+        // The first node with a later time.
+        let (mut lo, mut hi) = (0, self.nodes.len());
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if self.nodes[mid].time <= time {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        NodeId(lo.saturating_sub(1))
     }
 
     /// The time of the newest node: the latest time history has seen.
     pub fn latest_time(&self) -> Timestamp {
-        self.nodes[self.nodes.len() - 1].time
+        self.nodes.last().time
     }
 
     /// Approximate heap bytes held by the history (node storage, change
     /// sets, selections). For measurement and future caps.
     pub fn heap_bytes(&self) -> usize {
-        self.nodes.capacity() * size_of::<Node>()
-            + self.nodes.iter().map(Node::heap_bytes).sum::<usize>()
+        self.nodes.storage_bytes() + self.nodes.iter().map(Node::heap_bytes).sum::<usize>()
     }
 
     pub(crate) fn set_group_pause(&mut self, pause: Duration) {
@@ -330,7 +412,7 @@ impl History {
         &self.nodes[self.head.0]
     }
 
-    pub(crate) fn nodes_slice(&self) -> &[Node] {
+    pub(crate) fn node_store(&self) -> &Nodes {
         &self.nodes
     }
 
@@ -373,11 +455,7 @@ impl History {
             b = self.parent_of(b);
         }
         down.reverse();
-        Path {
-            up,
-            down,
-            target: Some(target),
-        }
+        Path { up, down, target }
     }
 
     fn parent_of(&self, id: NodeId) -> NodeId {
@@ -441,9 +519,7 @@ impl History {
                     let parent = self.parent_of(d);
                     self.nodes[parent.0].last_child = Some(d);
                 }
-                if let Some(target) = path.target {
-                    self.head = target;
-                }
+                self.head = path.target;
                 self.open = None;
             }
         }

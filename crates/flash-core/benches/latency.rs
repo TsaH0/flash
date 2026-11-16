@@ -27,7 +27,7 @@ use std::num::NonZeroU8;
 
 use flash_core::{
     ChangeSet, Direction, Editor, Event, KeyCode, KeyEvent, Motion, Movement, Range, Selection,
-    Text, Transaction, ViewId,
+    Text, Timestamp, Transaction, ViewId,
 };
 
 struct Counting;
@@ -284,6 +284,52 @@ fn run_fixture(fx: &Fixture) -> Vec<Report> {
             },
         ));
     }
+    // Stage 5: history. Typing into an open undo group composes the new
+    // edit into the group (100 earlier keystrokes); undo and redo of one
+    // character commit the stored change sets.
+    let mut grouped = one_view.clone();
+    let v = one_ids[0];
+    grouped
+        .set_selection(v, Selection::point(offsets[0]))
+        .unwrap();
+    for i in 0..100u64 {
+        grouped.handle_at(
+            &Event::Key(KeyEvent::plain(KeyCode::Char('x'))),
+            Timestamp::from_nanos(i),
+        );
+    }
+    let typed = Event::Key(KeyEvent::plain(KeyCode::Char('y')));
+    out.push(measure(
+        name,
+        "editor key into open group (100)",
+        |_| grouped.clone(),
+        |ed| {
+            black_box(ed.handle_at(&typed, Timestamp::from_nanos(100)));
+        },
+    ));
+    let with_edit = |i: usize| {
+        let mut ed = one_view.clone();
+        ed.set_selection(v, Selection::point(offsets[i])).unwrap();
+        let doc = ed.view_document(v).unwrap().1;
+        let txn = Transaction::insert(doc.text(), doc.selection(v).unwrap(), "x").unwrap();
+        ed.commit(v, txn).unwrap();
+        ed
+    };
+    out.push(measure(name, "undo char", with_edit, |ed| {
+        ed.undo(v).unwrap().unwrap();
+    }));
+    out.push(measure(
+        name,
+        "redo char",
+        |i| {
+            let mut ed = with_edit(i);
+            ed.undo(v).unwrap();
+            ed
+        },
+        |ed| {
+            ed.redo(v).unwrap().unwrap();
+        },
+    ));
     let tab = NonZeroU8::new(4).unwrap();
     for (label, motion) in [
         (

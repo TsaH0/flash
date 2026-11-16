@@ -66,3 +66,7 @@ harness = false
 name = "latency"
 harness = false
 required-features = ["internals"]
+
+[[bench]]
+name = "history"
+harness = false

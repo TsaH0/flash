@@ -10,6 +10,11 @@
 //! `origin = one` is a one-cursor edit with 10,000-range bystanders;
 //! `origin = 10k` is a 10,000-cursor edit. Later stages add their
 //! subsystems (history, markers, highlighting, plugins) to this benchmark.
+//!
+//! Stage 5: every commit now also records a history node (the inverse is
+//! computed against the old text). `undo/…` measures undoing that edit
+//! from the origin view: the stored inverse and selection committed, every
+//! bystander mapped through it.
 
 mod common;
 
@@ -69,6 +74,34 @@ fn bench_fixture(c: &mut Criterion, fx: &Fixture) {
                                 Transaction::insert(doc.text(), doc.selection(view).unwrap(), "x")
                                     .unwrap();
                             ed.commit(view, txn).unwrap();
+                            ed
+                        },
+                        BatchSize::LargeInput,
+                    )
+                },
+            );
+        }
+    }
+    g.finish();
+
+    let mut g = c.benchmark_group(format!("undo/{}", fx.name));
+    if fx.content.len() > 10 * common::MB {
+        g.sample_size(10);
+    }
+    for (label, origin) in &origins {
+        for views in VIEWS {
+            let (mut base, view) = editor(&text, views, origin);
+            let doc = base.view_document(view).unwrap().1;
+            let txn = Transaction::insert(doc.text(), doc.selection(view).unwrap(), "x").unwrap();
+            base.commit(view, txn).unwrap();
+            g.bench_with_input(
+                BenchmarkId::new(format!("origin {label}"), views),
+                &views,
+                |b, _| {
+                    b.iter_batched(
+                        || base.clone(),
+                        |mut ed| {
+                            ed.undo(view).unwrap().unwrap();
                             ed
                         },
                         BatchSize::LargeInput,
