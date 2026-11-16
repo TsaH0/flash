@@ -299,3 +299,78 @@ fn default_options_are_defaults() {
         crate::OptionValue::Int(6)
     );
 }
+
+/// Review attack tests: hostile configs never panic and never prevent
+/// the editor from working.
+#[test]
+fn hostile_configs_are_reported_not_fatal() {
+    let (mut ed, v) = editor("abc");
+    let deep = format!("x = {}{}", "[".repeat(100_000), "]".repeat(100_000));
+    let huge_keys: String = (0..20_000)
+        .map(|i| format!("\"F{}\" = \"undo\"\n", i % 30))
+        .collect();
+    for config in [
+        deep,
+        format!("[keys.normal]\n{huge_keys}"),
+        "[keys.normal]\n\"\\u0007\" = \"undo\"\n\"\\u001b[A\" = \"undo\"\n\" \" = \"undo\"\n"
+            .to_owned(),
+        "[keys.normal]\nq = \"\"\nw = \"   \"\ne = [\"undo\"]\nr = { a = 1 }\n".to_owned(),
+        "[keys]\nnormal = 3\n[options]\ntab-width = 1e9\n".to_owned(),
+        "\u{feff}[options]\ntab-width = 3\n".to_owned(),
+        "[keys.normal]\n\"g g g g g g g g\" = \"undo\"\n".to_owned(),
+    ] {
+        ed.load_config("hostile.toml", Some(&config));
+        // Still an editor: the defaults answer.
+        press(&mut ed, "esc l h");
+        assert!(ed.view(v).is_some());
+    }
+    // A sequence longer than four keys works (stored on the heap).
+    ed.load_config(
+        "long.toml",
+        Some("[keys.normal]\n\"Q Q Q Q Q Q\" = \"move-right\"\n"),
+    );
+    assert_eq!(ed.config_errors(), []);
+    press(&mut ed, "Q Q Q Q Q Q");
+    assert_eq!(head(&ed, v), 2);
+}
+
+#[test]
+fn hostile_patterns_counts_and_command_lines() {
+    let (mut ed, v) = editor("abc def\nghi");
+    // A pattern too large for the regex size limit is a message.
+    ed.run_named(
+        "select-regex",
+        &crate::Context {
+            arg: Some("(a{1000}){1000}"),
+            ..Default::default()
+        },
+    );
+    assert!(ed.message().contains("bad pattern"), "{}", ed.message());
+    // Counts past usize overflow stop growing; huge counts end at the edges.
+    press(&mut ed, "9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 l");
+    assert_eq!(head(&ed, v), 11, "the end of the text");
+    press(&mut ed, "9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 b");
+    press(&mut ed, "9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 w");
+    press(&mut ed, "9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 j");
+    press(
+        &mut ed,
+        "9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 pagedown",
+    );
+    for line in [
+        "",
+        " ",
+        ":",
+        "set",
+        "set  ",
+        "setlocal x",
+        "w",
+        "q extra",
+        "e",
+        "count x",
+        "count 12",
+    ] {
+        ed.command_line(line);
+    }
+    assert!(!ed.should_quit() || ed.documents().count() > 0);
+    let _ = Selection::point(0);
+}

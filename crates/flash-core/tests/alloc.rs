@@ -98,4 +98,17 @@ fn key_resolution_and_normal_motions_allocate_nothing() {
         });
         assert_eq!(n, 0, "allocations handling {k:?} 50 times in normal mode");
     }
+    // Insert mode's point motions too (the Stage 6 keys).
+    press(&mut ed, "i");
+    for k in ["right", "left", "down", "up", "right"] {
+        press(&mut ed, k);
+    }
+    for k in ["right", "left", "down", "up"] {
+        let n = allocations(|| {
+            for _ in 0..50 {
+                press(&mut ed, k);
+            }
+        });
+        assert_eq!(n, 0, "allocations handling {k:?} 50 times in insert mode");
+    }
 }

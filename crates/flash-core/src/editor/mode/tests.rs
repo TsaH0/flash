@@ -370,7 +370,30 @@ fn plugin_modes_register_and_go() {
     );
     assert!(ed.modes().id("scratch").is_none());
     assert!(ed.options().id("cursor-shape-scratch").is_none());
-    // Built-in modes cannot be removed with their owner.
+    // The built-in owner cannot be removed: modes, commands, and options
+    // all stay.
+    let commands = ed.commands().iter().count();
+    let options = ed.options().iter().count();
     ed.remove_owner(Owner::BUILTIN);
     assert!(ed.modes().id("insert").is_some());
+    assert_eq!(ed.commands().iter().count(), commands);
+    assert_eq!(ed.options().iter().count(), options);
+}
+
+/// The built-in hook consumer: closing a view drops a key sequence and a
+/// count typed for it, so they do not land on the next view.
+#[test]
+fn closing_a_view_drops_pending_keys_and_count() {
+    let (mut ed, v) = editor("abc");
+    let doc = ed.view(v).unwrap().doc();
+    let other = ed.open_view(doc).unwrap();
+    ed.set_focus(v).unwrap();
+    keys(&mut ed, "3 g");
+    assert_eq!(ed.count().map(|c| c.get()), Some(3));
+    assert!(!ed.keymap().pending().is_empty());
+    ed.close_view(v).unwrap();
+    ed.flush_events();
+    assert_eq!(ed.count(), None);
+    assert!(ed.keymap().pending().is_empty());
+    assert_eq!(ed.focus(), Some(other));
 }
