@@ -27,7 +27,7 @@ use std::num::NonZeroU8;
 
 use flash_core::{
     ChangeSet, Direction, Editor, Event, KeyCode, KeyEvent, ModeId, Motion, Movement, Range,
-    Selection, Text, Timestamp, Transaction, ViewId,
+    Selection, Text, Timestamp, Transaction, ViewId, parse_key,
 };
 
 struct Counting;
@@ -306,6 +306,49 @@ fn run_fixture(fx: &Fixture) -> Vec<Report> {
             name,
             label,
             |i| one_at[i % PREPARED].clone(),
+            |ed| {
+                black_box(ed.handle(&event));
+            },
+        ));
+    }
+    // Stage 7: key resolution alone (the normal-mode keymap trie), and
+    // keys through the keymap in normal mode (block cursor, mode minimum,
+    // hooks), from the same random offsets.
+    for (label, keys) in [
+        ("key resolve 'l'", &["l"][..]),
+        ("key resolve 'g g' (2nd key)", &["g", "g"][..]),
+        ("key resolve miss", &["F5"][..]),
+    ] {
+        let keys: Vec<KeyEvent> = keys.iter().map(|k| parse_key(k).unwrap()).collect();
+        let (last, prefix) = keys.split_last().unwrap();
+        out.push(measure(
+            name,
+            label,
+            |_| {
+                let mut map = one_view.keymap().clone();
+                for &k in prefix {
+                    map.feed(ModeId::NORMAL, k, Timestamp::ZERO, u64::MAX);
+                }
+                map
+            },
+            |map| {
+                black_box(map.feed(ModeId::NORMAL, *last, Timestamp::ZERO, u64::MAX));
+            },
+        ));
+    }
+    for (label, key) in [
+        ("editor normal 'l' (block)", "l"),
+        ("editor normal 'w' (select word)", "w"),
+    ] {
+        let event = Event::Key(parse_key(key).unwrap());
+        out.push(measure(
+            name,
+            label,
+            |i| {
+                let mut ed = one_at[i % PREPARED].clone();
+                ed.set_mode(one_ids[0], ModeId::NORMAL);
+                ed
+            },
             |ed| {
                 black_box(ed.handle(&event));
             },

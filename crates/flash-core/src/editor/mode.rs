@@ -471,11 +471,12 @@ impl Editor {
         f: impl Fn(&Text, Range) -> Result<Range, TextError>,
     ) -> Effects {
         self.reselect(view, |text, sel| {
+            // Inline for one range: a motion of one cursor allocates nothing.
             let ranges = sel
                 .ranges()
                 .iter()
                 .map(|&r| f(text, r))
-                .collect::<Result<Vec<Range>, TextError>>()
+                .collect::<Result<smallvec::SmallVec<[Range; 1]>, TextError>>()
                 .map_err(|e| e.to_string())?;
             Selection::new(ranges, sel.primary_index()).map_err(|e| e.to_string())
         })
