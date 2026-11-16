@@ -1,0 +1,11 @@
+[package]
+name = "flash-term"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Flash terminal frontend: crossterm input, rendering, terminal lifecycle"
+
+[dependencies]
+flash-core.workspace = true
+crossterm.workspace = true

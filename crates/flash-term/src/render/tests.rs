@@ -1,0 +1,469 @@
+//! Renderer tests against a minimal terminal emulator.
+
+use std::num::NonZeroU8;
+use std::path::PathBuf;
+
+use flash_core::{Editor, Event, KeyCode, KeyEvent, Modifiers, Range, Selection, Text};
+
+use super::Renderer;
+use flash_core::width::grapheme_width;
+
+/// What a terminal shows after a frame: characters (`'\0'` for the right
+/// half of a wide character), reverse-video flags, and the cursor.
+struct Screen {
+    cells: Vec<Vec<char>>,
+    reversed: Vec<Vec<bool>>,
+    cursor: Option<(usize, usize)>,
+}
+
+impl Screen {
+    /// A terminal that measures grapheme clusters as `unicode-width`
+    /// does (as the renderer assumes).
+    fn of(bytes: &[u8], w: usize, h: usize) -> Screen {
+        Screen::emulate(bytes, w, h, false)
+    }
+
+    /// Interprets the escapes crossterm emits for a frame: CUP, EL, ED,
+    /// SGR 0/7/27, cursor show/hide, synchronized update. With `per_char`,
+    /// a terminal that does not join clusters: every char takes its own
+    /// width, and cells past the right edge are clipped.
+    fn emulate(bytes: &[u8], w: usize, h: usize, per_char: bool) -> Screen {
+        let s = std::str::from_utf8(bytes).expect("frames are UTF-8");
+        let mut cells = vec![vec![' '; w]; h];
+        let mut reversed = vec![vec![false; w]; h];
+        let (mut x, mut y, mut rev, mut shown) = (0usize, 0usize, false, false);
+        let mut prev: Option<char> = None;
+        let mut chars = s.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' {
+                prev = None;
+                assert_eq!(chars.next(), Some('['), "only CSI escapes in frames");
+                let mut params = String::new();
+                let final_byte = loop {
+                    let c = chars.next().expect("unterminated CSI");
+                    if c.is_ascii_alphabetic() {
+                        break c;
+                    }
+                    params.push(c);
+                };
+                let nums: Vec<usize> = params
+                    .trim_start_matches('?')
+                    .split(';')
+                    .filter_map(|p| p.parse().ok())
+                    .collect();
+                match final_byte {
+                    'H' => {
+                        y = nums.first().copied().unwrap_or(1) - 1;
+                        x = nums.get(1).copied().unwrap_or(1) - 1;
+                    }
+                    'K' => {
+                        for i in x..w {
+                            cells[y][i] = ' ';
+                            reversed[y][i] = false;
+                        }
+                    }
+                    'J' => {
+                        cells = vec![vec![' '; w]; h];
+                        reversed = vec![vec![false; w]; h];
+                    }
+                    'm' => {
+                        for n in if nums.is_empty() { vec![0] } else { nums } {
+                            match n {
+                                0 | 27 => rev = false,
+                                7 => rev = true,
+                                _ => {}
+                            }
+                        }
+                    }
+                    'h' if params == "?25" => shown = true,
+                    'l' if params == "?25" => shown = false,
+                    'h' | 'l' => {}
+                    other => panic!("unexpected CSI {params}{other}"),
+                }
+                continue;
+            }
+            assert!(!c.is_control(), "raw control {c:?} in a frame");
+            // A cluster-aware terminal joins a char into the previous cell
+            // when it continues a cluster (ZWJ, emoji after ZWJ, a second
+            // regional indicator, variation selectors, combining marks).
+            let mut buf = [0; 4];
+            let mut cw = grapheme_width(c.encode_utf8(&mut buf), 0, NonZeroU8::MIN);
+            if !per_char && joins(prev, c) {
+                cw = 0;
+            }
+            prev = Some(c);
+            if cw == 0 {
+                continue;
+            }
+            if per_char && x + cw > w {
+                x = w;
+                continue;
+            }
+            assert!(
+                x + cw <= w,
+                "{c:?} drawn past the right edge at {x}, row {y} of {h}: {:?}",
+                cells[y].iter().collect::<String>()
+            );
+            cells[y][x] = c;
+            reversed[y][x] = rev;
+            if cw == 2 {
+                cells[y][x + 1] = '\0';
+                reversed[y][x + 1] = rev;
+            }
+            x += cw;
+        }
+        Screen {
+            cells,
+            reversed,
+            cursor: shown.then_some((x, y)),
+        }
+    }
+
+    fn row(&self, y: usize) -> String {
+        self.cells[y]
+            .iter()
+            .filter(|&&c| c != '\0')
+            .collect::<String>()
+            .trim_end()
+            .to_owned()
+    }
+}
+
+/// Whether `c` continues the cluster `prev` ended (enough for the test
+/// pieces: ZWJ sequences and regional-indicator pairs).
+fn joins(prev: Option<char>, c: char) -> bool {
+    let ri = |c: char| ('\u{1F1E6}'..='\u{1F1FF}').contains(&c);
+    match prev {
+        Some('\u{200D}') => true,
+        Some(p) if ri(p) && ri(c) => true,
+        _ => c == '\u{200D}',
+    }
+}
+
+fn plain(code: KeyCode) -> Event {
+    Event::Key(KeyEvent::plain(code))
+}
+
+fn editor_with(s: &str, width: u16, height: u16) -> Editor {
+    let mut ed = Editor::new(width, height);
+    let doc = ed.open(Text::from(s), None);
+    ed.open_view(doc).unwrap();
+    ed
+}
+
+fn frame(ed: &Editor) -> Vec<u8> {
+    Renderer::new().frame(ed, 1234).to_vec()
+}
+
+fn screen(ed: &Editor) -> Screen {
+    let (w, h) = ed.screen();
+    Screen::of(&frame(ed), usize::from(w), usize::from(h))
+}
+
+#[test]
+fn draws_lines_status_and_cursor() {
+    let mut ed = editor_with("hello\nworld", 20, 4);
+    ed.handle(&plain(KeyCode::Down));
+    ed.handle(&plain(KeyCode::End));
+    let s = screen(&ed);
+    assert_eq!(s.row(0), "hello");
+    assert_eq!(s.row(1), "world");
+    assert_eq!(s.row(2), "");
+    assert!(s.row(3).starts_with("[scratch]  2:6  1 µs"), "{}", s.row(3));
+    assert!(s.reversed[3][0], "status line is reversed");
+    assert_eq!(s.cursor, Some((5, 1)));
+    let bytes = frame(&ed);
+    assert!(bytes.starts_with(b"\x1b[?2026h"), "synchronized update");
+    assert!(bytes.ends_with(b"\x1b[?2026l"));
+}
+
+#[test]
+fn status_shows_path_modified_cursors_and_message() {
+    let mut ed = Editor::new(60, 3);
+    let doc = ed.open(Text::from("ab"), Some(PathBuf::from("dir/a.txt")));
+    let view = ed.open_view(doc).unwrap();
+    ed.handle(&plain(KeyCode::Char('x')));
+    ed.set_selection(
+        view,
+        Selection::new([Range::point(0), Range::point(2)], 0).unwrap(),
+    )
+    .unwrap();
+    ed.handle(&Event::Key(KeyEvent::new(
+        KeyCode::Char('c'),
+        Modifiers::CTRL,
+    )));
+    let status = screen(&ed).row(2);
+    assert!(
+        status.starts_with("dir/a.txt [+]  2 cursors  1:1"),
+        "{status}"
+    );
+    assert!(status.ends_with("nothing selected"), "{status}");
+}
+
+#[test]
+fn replaces_control_characters_and_drops_bidi_overrides() {
+    let ed = editor_with("a\u{1b}[2Jb\u{7}c\u{202E}d", 80, 3);
+    let bytes = frame(&ed);
+    assert!(!bytes.windows(4).any(|w| w == b"\x1b[2J"));
+    assert!(!bytes.contains(&0x07));
+    let s = Screen::of(&bytes, 80, 3);
+    assert_eq!(s.row(0), "a\u{fffd}[2Jb\u{fffd}cd");
+    let mut ed = Editor::new(80, 3);
+    let doc = ed.open(
+        Text::from("x"),
+        Some(PathBuf::from("evil\u{1b}[2J\u{202E}")),
+    );
+    ed.open_view(doc).unwrap();
+    let bytes = frame(&ed);
+    assert!(!bytes.windows(4).any(|w| w == b"\x1b[2J"));
+    assert!(!String::from_utf8_lossy(&bytes).contains('\u{202E}'));
+}
+
+#[test]
+fn tabs_expand_to_the_tab_width() {
+    let mut ed = editor_with("\tx\n12\ty", 20, 3);
+    assert_eq!(screen(&ed).row(0), "    x");
+    assert_eq!(screen(&ed).row(1), "12  y");
+    ed.set_tab_width(NonZeroU8::new(8).unwrap());
+    assert_eq!(screen(&ed).row(0), "        x");
+    assert_eq!(screen(&ed).row(1), "12      y");
+}
+
+#[test]
+fn horizontal_scroll_and_wide_characters_at_the_edges() {
+    // 10 columns; the line is 0123456789 then a wide 漢 then abc.
+    let mut ed = editor_with("0123456789漢abc", 10, 2);
+    // Without scrolling, 漢 does not fit (columns 10-11): not drawn.
+    let s = screen(&ed);
+    assert_eq!(s.row(0), "0123456789");
+    assert_eq!(s.cursor, Some((0, 0)));
+    // End: the cursor (column 15) is shown; left = 6, so 漢 is at 4-5.
+    ed.handle(&plain(KeyCode::End));
+    let s = screen(&ed);
+    assert_eq!(ed.view(ed.focus().unwrap()).unwrap().left(), 6);
+    assert_eq!(s.row(0), "6789漢abc");
+    assert_eq!(s.cursor, Some((9, 0)));
+    // The left edge cutting 漢 in half: a longer line, cursor moved to
+    // column 20, so left = 11 (the right half of 漢 at columns 10-11).
+    let mut ed = editor_with("0123456789漢abcdefghijklmnop", 10, 2);
+    for _ in 0..19 {
+        ed.handle(&plain(KeyCode::Right));
+    }
+    assert_eq!(ed.view(ed.focus().unwrap()).unwrap().left(), 11);
+    let s = screen(&ed);
+    assert_eq!(s.row(0), " abcdefghi");
+    assert!(!s.cells[0].contains(&'漢'));
+    assert_eq!(s.cursor, Some((9, 0)));
+}
+
+#[test]
+fn columns_after_a_disputed_cluster_are_right_on_any_terminal() {
+    // The family is 2 cells for unicode-width, 6 on a terminal that does
+    // not join ZWJ sequences; "x" belongs at column 3 either way.
+    let ed = editor_with("c\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}x", 20, 2);
+    let bytes = frame(&ed);
+    for per_char in [false, true] {
+        let s = Screen::emulate(&bytes, 20, 2, per_char);
+        assert_eq!(s.cells[0][3], 'x', "per_char {per_char}: {:?}", s.cells[0]);
+    }
+    // A plain wide character needs no repositioning.
+    let ed = editor_with("漢x", 20, 2);
+    let n = frame(&ed).windows(2).filter(|w| w == b"\x1b[").count();
+    let m = frame(&editor_with("ab", 20, 2))
+        .windows(2)
+        .filter(|w| w == b"\x1b[")
+        .count();
+    assert_eq!(n, m);
+}
+
+#[test]
+fn a_wide_character_cut_by_the_right_edge_is_spaces() {
+    let ed = editor_with("a漢", 2, 3);
+    let s = screen(&ed);
+    assert_eq!(s.row(0), "a");
+    assert!(!s.cells[0].contains(&'漢'));
+}
+
+#[test]
+fn selections_and_secondary_cursors_are_reversed() {
+    let mut ed = editor_with("abcdef\nxy", 20, 4);
+    let view = ed.focus().unwrap();
+    let sel = Selection::new([Range::new(1, 3), Range::point(5), Range::point(9)], 0).unwrap();
+    ed.set_selection(view, sel).unwrap();
+    let s = screen(&ed);
+    let rev: Vec<bool> = s.reversed[0][..7].to_vec();
+    assert_eq!(rev, [false, true, true, false, false, true, false]);
+    // A secondary cursor at the end of line 2 is a reversed space.
+    assert!(s.reversed[1][2]);
+    assert_eq!(s.cursor, Some((3, 0)), "primary head");
+}
+
+#[test]
+fn the_prompt_replaces_the_status_line_and_scrolls() {
+    let mut ed = editor_with("text", 12, 3);
+    ed.handle(&Event::Key(KeyEvent::new(
+        KeyCode::Char('o'),
+        Modifiers::CTRL,
+    )));
+    for c in "abc".chars() {
+        ed.handle(&plain(KeyCode::Char(c)));
+    }
+    let s = screen(&ed);
+    assert_eq!(s.row(2), "open: abc");
+    assert!(!s.reversed[2][0]);
+    assert_eq!(s.cursor, Some((9, 2)));
+    // Longer than the screen: the tail with the cursor is shown.
+    for c in "defghijk".chars() {
+        ed.handle(&plain(KeyCode::Char(c)));
+    }
+    let s = screen(&ed);
+    assert_eq!(s.row(2), "abcdefghijk");
+    assert_eq!(s.cursor, Some((11, 2)));
+    assert_eq!(s.row(0), "text");
+}
+
+#[test]
+fn without_focus_the_screen_is_cleared() {
+    let mut ed = editor_with("hello", 20, 5);
+    let view = ed.focus().unwrap();
+    ed.close_view(view).unwrap();
+    let s = screen(&ed);
+    assert_eq!(s.row(0), "");
+    assert_eq!(s.cursor, None);
+}
+
+#[test]
+fn scrolls_to_the_primary_cursor() {
+    let text: String = (0..100).map(|i| format!("line{i}\n")).collect();
+    let mut ed = editor_with(&text, 40, 10);
+    ed.handle(&Event::Key(KeyEvent::new(KeyCode::End, Modifiers::CTRL)));
+    let s = screen(&ed);
+    assert_eq!(s.row(7), "line99");
+    assert_eq!(s.cursor, Some((0, 8)));
+}
+
+#[test]
+fn survives_tiny_terminals() {
+    for s in ["", "abc", "漢字\tx"] {
+        for (w, h) in [(0, 0), (1, 1), (2, 1), (1, 5), (0, 5), (5, 0)] {
+            let mut ed = editor_with(s, 80, 24);
+            ed.handle(&Event::Resize {
+                width: w,
+                height: h,
+            });
+            Screen::of(&frame(&ed), w.into(), h.into());
+            ed.handle(&plain(KeyCode::Char('z')));
+            ed.handle(&plain(KeyCode::End));
+            Screen::of(&frame(&ed), w.into(), h.into());
+            ed.handle(&Event::Key(KeyEvent::new(
+                KeyCode::Char('o'),
+                Modifiers::CTRL,
+            )));
+            ed.handle(&plain(KeyCode::Char('漢')));
+            Screen::of(&frame(&ed), w.into(), h.into());
+        }
+    }
+}
+
+/// A hostile trace can resize to 65535×65535: rendering stays bounded
+/// (one cursor move and clear per row, nothing per empty cell).
+#[test]
+fn survives_a_huge_screen() {
+    let mut ed = editor_with("abc\n漢字", 80, 24);
+    ed.handle(&Event::Resize {
+        width: u16::MAX,
+        height: u16::MAX,
+    });
+    ed.handle(&Event::Key(KeyEvent::new(KeyCode::End, Modifiers::CTRL)));
+    let start = std::time::Instant::now();
+    let bytes = frame(&ed);
+    assert!(bytes.len() < 2 << 20, "{} bytes", bytes.len());
+    assert!(start.elapsed() < std::time::Duration::from_secs(2));
+}
+
+/// Random keys, pastes, and resizes over Unicode-heavy texts, rendered
+/// after every event through the emulator: never panics, never draws past
+/// the right edge, and no raw control character reaches the output.
+#[test]
+fn random_events_render_cleanly() {
+    const PIECES: &[&str] = &[
+        "a",
+        "xyz ",
+        "\n",
+        "\r\n",
+        "\r",
+        "\t",
+        "é",
+        "e\u{301}",
+        "老虎",
+        "😀",
+        "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}",
+        "\u{1F1FA}\u{1F1F8}",
+        "\u{7}",
+        "\u{1b}[31m",
+        "\u{202E}",
+        "\u{200B}",
+    ];
+    let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+    let mut next = |n: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed % n) as usize
+    };
+    let codes = [
+        KeyCode::Left,
+        KeyCode::Right,
+        KeyCode::Up,
+        KeyCode::Down,
+        KeyCode::Home,
+        KeyCode::End,
+        KeyCode::PageUp,
+        KeyCode::PageDown,
+        KeyCode::Backspace,
+        KeyCode::Delete,
+        KeyCode::Enter,
+        KeyCode::Tab,
+        KeyCode::Esc,
+        KeyCode::Char('x'),
+        KeyCode::Char('o'),
+        KeyCode::Char('c'),
+        KeyCode::Char('v'),
+        KeyCode::Char('é'),
+        KeyCode::Char('漢'),
+        KeyCode::Char('\u{301}'),
+    ];
+    let mods = [
+        Modifiers::NONE,
+        Modifiers::SHIFT,
+        Modifiers::CTRL,
+        Modifiers::ALT,
+    ];
+    for _ in 0..150 {
+        let text: String = (0..next(40))
+            .map(|_| PIECES[next(PIECES.len() as u64)])
+            .collect();
+        let mut ed = editor_with(&text, 1 + next(30) as u16, 1 + next(8) as u16);
+        let mut renderer = Renderer::new();
+        for _ in 0..100 {
+            let event = match next(20) {
+                0 => Event::Paste {
+                    text: PIECES[next(PIECES.len() as u64)].to_owned(),
+                },
+                1 => Event::Resize {
+                    width: next(12) as u16,
+                    height: next(5) as u16,
+                },
+                _ => Event::Key(KeyEvent::new(
+                    codes[next(codes.len() as u64)],
+                    mods[next(mods.len() as u64)],
+                )),
+            };
+            ed.handle(&event);
+            ed.take_requests();
+            let (w, h) = ed.screen();
+            let bytes = renderer.frame(&ed, 0).to_vec();
+            Screen::of(&bytes, w.into(), h.into());
+        }
+    }
+}

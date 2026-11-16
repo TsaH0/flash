@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/flash-core", "apps/flash"]
+members = ["crates/flash-core", "crates/flash-term", "apps/flash"]
 # Vendored dependencies are patches, not workspace members.
 exclude = ["vendor", "crates/flash-core/fuzz"]
 
@@ -12,6 +12,7 @@ publish = false
 
 [workspace.dependencies]
 flash-core = { path = "crates/flash-core" }
+flash-term = { path = "crates/flash-term" }
 # Pinned exactly: Text's line model and validation are written against this
 # version's behaviour (docs/PLAN.md section 2.3).
 crop = { version = "=0.4.3", features = ["graphemes"] }
