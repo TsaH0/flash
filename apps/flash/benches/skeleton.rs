@@ -23,7 +23,7 @@ use flash_core::trace::{
     self, DEFAULT_MAX_LINE, TRACE_VERSION, TraceEntry, TraceHeader, TraceReader, TraceSource,
     TraceWriter,
 };
-use flash_core::{Event, KeyCode, KeyEvent, Modifiers, Text};
+use flash_core::{Event, KeyCode, KeyEvent, Modifiers, Text, Timestamp};
 
 const REPEATS: usize = 100;
 
@@ -72,7 +72,8 @@ fn trace_for(fx: &Fixture, text: &Text, width: u16, height: u16) -> (TraceHeader
     {
         writer
             .write(&TraceEntry {
-                t_ns: i as u64,
+                // 100 ms apart: typing speed, so edits group (Stage 5).
+                t_ns: i as u64 * 100_000_000,
                 event: event.clone(),
             })
             .unwrap();
@@ -94,7 +95,7 @@ fn run(fx: &Fixture, width: u16, height: u16) -> Vec<u64> {
     for entry in &entries {
         sink.clear();
         let start = Instant::now();
-        editor.handle(&entry.event);
+        editor.handle_at(&entry.event, Timestamp::from_nanos(entry.t_ns));
         skeleton.render(&editor, &mut sink).unwrap();
         sink.flush().unwrap();
         samples.push(start.elapsed().as_nanos() as u64);

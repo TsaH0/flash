@@ -17,6 +17,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::document::Timestamp;
 use crate::editor::{Editor, Event, ViewId};
 use crate::selection::Selection;
 use crate::text::{Text, TextError};
@@ -56,8 +57,10 @@ pub struct TraceHeader {
 /// One recorded event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TraceEntry {
-    /// Nanoseconds since recording started. Not required to be monotonic;
-    /// replay ignores it today (Stage 6 uses it to replay coalescing).
+    /// Nanoseconds since recording started: the time the editor handles the
+    /// event at ([`Editor::handle_at`]), which decides undo grouping. Not
+    /// required to be monotonic (history clamps). Stage 6 also uses it to
+    /// replay coalescing.
     pub t_ns: u64,
     pub event: Event,
 }
@@ -240,15 +243,17 @@ pub fn start(header: &TraceHeader, text: Text) -> Result<(Editor, ViewId), Trace
     Ok((editor, view))
 }
 
-/// Feeds every remaining entry of `reader` to `editor`. Returns the number
-/// of events replayed, or the first read error.
+/// Feeds every remaining entry of `reader` to `editor`, each at its
+/// recorded time. Returns the number of events replayed, or the first read
+/// error.
 pub fn replay<R: BufRead>(
     reader: &mut TraceReader<R>,
     editor: &mut Editor,
 ) -> Result<usize, TraceError> {
     let mut count = 0;
     for entry in reader {
-        editor.handle(&entry?.event);
+        let entry = entry?;
+        editor.handle_at(&entry.event, Timestamp::from_nanos(entry.t_ns));
         count += 1;
     }
     Ok(count)

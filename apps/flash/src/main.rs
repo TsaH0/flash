@@ -4,8 +4,8 @@
 //!
 //! Keys: type to insert; Enter, Tab, Backspace, Delete; arrows move (Shift
 //! extends); Ctrl+arrows move by word; Home/End and Ctrl+Home/End; Alt+Up /
-//! Alt+Down add a cursor; Esc keeps only the primary cursor; Ctrl+Q quits.
-//! There is no save.
+//! Alt+Down add a cursor; Esc keeps only the primary cursor; Ctrl+Z undoes;
+//! Ctrl+Y or Ctrl+Shift+Z redoes; Ctrl+Q quits. There is no save.
 //!
 //! Environment:
 //! - `FLASH_LATENCY_LOG=<file>`: on exit, append one JSON line summarising
@@ -33,7 +33,7 @@ use flash_core::trace::{
     self, DEFAULT_MAX_LINE, TRACE_VERSION, TraceEntry, TraceHeader, TraceReader, TraceSource,
     TraceWriter,
 };
-use flash_core::{Editor, Text};
+use flash_core::{Editor, Text, Timestamp};
 
 const USAGE: &str = "usage: flash <file>\n       flash --replay <trace>";
 
@@ -161,7 +161,7 @@ fn event_loop(
             continue;
         };
         let t_ns = now_ns(session);
-        let effects = editor.handle(&event);
+        let effects = editor.handle_at(&event, Timestamp::from_nanos(t_ns));
         if !effects.quit && effects.needs_redraw() {
             skeleton.render(editor, &mut out)?;
             out.flush()?;
@@ -206,7 +206,8 @@ fn replay(trace_path: &Path) -> Result<(), String> {
         let entry = entry.map_err(at)?;
         sink.clear();
         let start = Instant::now();
-        if editor.handle(&entry.event).needs_redraw() {
+        let now = Timestamp::from_nanos(entry.t_ns);
+        if editor.handle_at(&entry.event, now).needs_redraw() {
             skeleton
                 .render(&editor, &mut sink)
                 .map_err(|e| e.to_string())?;

@@ -2,7 +2,9 @@
 //! and effects.
 
 use super::*;
-use crate::{ChangeSet, Range, Selection, Text, Transaction};
+use crate::{
+    ChangeSet, CommitError, NodeId, Range, Revision, Selection, Text, Timestamp, Transaction,
+};
 
 fn key(code: KeyCode, modifiers: Modifiers) -> Event {
     Event::Key(KeyEvent::new(code, modifiers))
@@ -313,4 +315,212 @@ fn modifiers_and_key_constructors() {
         KeyEvent::plain(KeyCode::Esc),
         KeyEvent::new(KeyCode::Esc, Modifiers::NONE)
     );
+}
+
+// ---- history (Stage 5) ----
+
+fn at(ms: u64) -> Timestamp {
+    Timestamp::from_nanos(ms * 1_000_000)
+}
+
+/// Types `s` into the focused view, one key every 10 ms from `start_ms`.
+fn type_at(ed: &mut Editor, s: &str, start_ms: u64) {
+    for (i, c) in s.chars().enumerate() {
+        ed.handle_at(&plain(KeyCode::Char(c)), at(start_ms + 10 * i as u64));
+    }
+}
+
+#[test]
+fn undo_and_redo_keys() {
+    let (mut ed, doc, view) = editor("");
+    type_at(&mut ed, "ab", 0);
+    let fx = ed.handle(&ctrl(KeyCode::Char('z')));
+    assert!(fx.text && fx.selection, "{fx:?}");
+    assert_eq!(text(&ed, doc), "");
+    assert_eq!(heads(&ed, view), [0]);
+    let fx = ed.handle(&ctrl(KeyCode::Char('y')));
+    assert!(fx.text && fx.selection, "{fx:?}");
+    assert_eq!(text(&ed, doc), "ab");
+    assert_eq!(heads(&ed, view), [2]);
+    ed.handle(&ctrl(KeyCode::Char('z')));
+    let ctrl_shift = Modifiers {
+        ctrl: true,
+        shift: true,
+        alt: false,
+    };
+    for code in [KeyCode::Char('z'), KeyCode::Char('Z')] {
+        ed.handle(&key(code, ctrl_shift));
+        assert_eq!(text(&ed, doc), "ab", "{code:?}");
+        ed.handle(&ctrl(KeyCode::Char('z')));
+    }
+    assert_eq!(text(&ed, doc), "");
+}
+
+#[test]
+fn undo_at_the_ends_reports() {
+    let (mut ed, doc, _) = editor("abc");
+    let fx = ed.handle(&ctrl(KeyCode::Char('z')));
+    assert!(!fx.text && !fx.selection && fx.message, "{fx:?}");
+    assert_eq!(ed.message(), "already at the oldest change");
+    let fx = ed.handle(&ctrl(KeyCode::Char('y')));
+    assert!(!fx.text && fx.message, "{fx:?}");
+    assert_eq!(ed.message(), "already at the newest change");
+    ed.handle(&plain(KeyCode::Char('x')));
+    assert_eq!(ed.message(), "");
+    assert_eq!(text(&ed, doc), "xabc");
+}
+
+#[test]
+fn a_typed_word_is_one_undo_step() {
+    let (mut ed, doc, _) = editor("");
+    type_at(&mut ed, "héllo wörld", 0);
+    ed.handle(&ctrl(KeyCode::Char('z')));
+    assert_eq!(text(&ed, doc), "");
+}
+
+#[test]
+fn every_motion_key_ends_the_group_even_without_moving() {
+    for boundary in [
+        plain(KeyCode::Right), // at the end: does not move
+        plain(KeyCode::End),
+        plain(KeyCode::Esc),
+        ctrl(KeyCode::End),
+        key(KeyCode::Down, Modifiers::ALT), // one line: no cursor added
+    ] {
+        let (mut ed, doc, _) = editor("");
+        type_at(&mut ed, "ab", 0);
+        ed.handle_at(&boundary, at(30));
+        type_at(&mut ed, "cd", 40);
+        ed.handle(&ctrl(KeyCode::Char('z')));
+        assert_eq!(text(&ed, doc), "ab", "{boundary:?}");
+    }
+}
+
+#[test]
+fn a_pause_ends_the_group() {
+    let (mut ed, doc, _) = editor("");
+    type_at(&mut ed, "ab", 0);
+    type_at(&mut ed, "cd", 5_000);
+    ed.handle(&ctrl(KeyCode::Char('z')));
+    assert_eq!(text(&ed, doc), "ab");
+}
+
+#[test]
+fn handle_without_a_time_keeps_the_last_one() {
+    let (mut ed, doc, _) = editor("");
+    ed.handle_at(&plain(KeyCode::Char('a')), at(5_000));
+    assert_eq!(ed.now(), at(5_000));
+    ed.handle(&plain(KeyCode::Char('b')));
+    assert_eq!(ed.now(), at(5_000));
+    ed.handle(&ctrl(KeyCode::Char('z')));
+    assert_eq!(text(&ed, doc), "");
+}
+
+#[test]
+fn a_paste_is_its_own_undo_step() {
+    let (mut ed, doc, _) = editor("");
+    type_at(&mut ed, "a", 0);
+    ed.handle_at(
+        &Event::Paste {
+            text: "XY".to_owned(),
+        },
+        at(10),
+    );
+    type_at(&mut ed, "b", 20);
+    for expected in ["aXY", "a", ""] {
+        ed.handle(&ctrl(KeyCode::Char('z')));
+        assert_eq!(text(&ed, doc), expected);
+    }
+}
+
+#[test]
+fn editing_keys_group_together() {
+    let (mut ed, doc, _) = editor("");
+    type_at(&mut ed, "ab", 0);
+    for (i, code) in [
+        KeyCode::Enter,
+        KeyCode::Tab,
+        KeyCode::Backspace,
+        KeyCode::Backspace,
+        KeyCode::Delete,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        ed.handle_at(&plain(code), at(30 + i as u64));
+    }
+    assert_eq!(text(&ed, doc), "ab");
+    let node = ed.document(doc).unwrap().history().len();
+    assert_eq!(node, 2, "one node");
+}
+
+#[test]
+fn history_api_on_the_editor() {
+    let (mut ed, doc, view) = editor("");
+    let r1 = ed
+        .commit(
+            view,
+            Transaction::new(ChangeSet::from_edits(0, [(0..0, "a")]).unwrap(), None),
+        )
+        .unwrap();
+    ed.checkpoint(view).unwrap();
+    let txn = Transaction::insert(
+        ed.document(doc).unwrap().text(),
+        ed.selection(view).unwrap(),
+        "b",
+    )
+    .unwrap();
+    ed.commit(view, txn).unwrap();
+    assert_eq!(
+        ed.document(doc).unwrap().history().len(),
+        3,
+        "commits are separate steps"
+    );
+    assert_eq!(ed.undo(view), Ok(Some(Revision(3))));
+    assert_eq!(text(&ed, doc), "a");
+    assert_eq!(ed.redo(view), Ok(Some(Revision(4))));
+    assert_eq!(ed.goto(view, NodeId::ROOT), Ok(Some(Revision(5))));
+    assert_eq!(text(&ed, doc), "");
+    assert_eq!(ed.goto(view, NodeId::ROOT), Ok(None));
+    assert!(r1 < Revision(5));
+    assert_eq!(
+        ed.goto(view, NodeId(9)),
+        Err(EditorError::Commit(CommitError::NoSuchNode(NodeId(9))))
+    );
+    ed.close_view(view).unwrap();
+    for result in [ed.undo(view), ed.redo(view), ed.goto(view, NodeId::ROOT)] {
+        assert_eq!(result, Err(EditorError::NoSuchView(view)));
+    }
+    assert_eq!(ed.checkpoint(view), Err(EditorError::NoSuchView(view)));
+}
+
+#[test]
+fn undo_scrolls_the_focused_view_to_the_restored_cursor() {
+    let (mut ed, doc, view) = editor(&"line\n".repeat(100));
+    ed.handle(&Event::Resize {
+        width: 20,
+        height: 6,
+    });
+    ed.handle(&plain(KeyCode::Char('x')));
+    ed.handle(&ctrl(KeyCode::End));
+    assert!(ed.view(view).unwrap().top() > 0);
+    ed.handle(&ctrl(KeyCode::Char('z')));
+    assert_eq!(heads(&ed, view), [0]);
+    assert_eq!(ed.view(view).unwrap().top(), 0);
+    assert_eq!(text(&ed, doc), "line\n".repeat(100));
+}
+
+#[test]
+fn undo_from_another_view_maps_the_typing_view() {
+    let (mut ed, doc, a) = editor("hello");
+    let b = ed.open_view(doc).unwrap();
+    ed.set_focus(a).unwrap();
+    ed.set_selection(a, Selection::point(5)).unwrap();
+    type_at(&mut ed, " world", 0);
+    ed.set_focus(b).unwrap();
+    ed.handle(&ctrl(KeyCode::Char('z')));
+    assert_eq!(text(&ed, doc), "hello");
+    // b gets the stored selection; a is mapped back to the end.
+    assert_eq!(heads(&ed, b), [5]);
+    assert_eq!(heads(&ed, a), [5]);
 }

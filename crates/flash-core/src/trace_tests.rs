@@ -227,6 +227,27 @@ fn random_entries(seed: u64, n: usize) -> Vec<TraceEntry> {
         .collect()
 }
 
+/// `n` random entries from `seed` with session-like times: mostly short
+/// steps (typing groups), some pauses past the group limit, and sometimes
+/// a step back.
+fn timed_entries(seed: u64, n: usize) -> Vec<TraceEntry> {
+    let mut rng = Xorshift(seed | 1);
+    let mut t: u64 = 0;
+    (0..n)
+        .map(|_| {
+            t = match rng.next(10) {
+                0 => t.saturating_sub(rng.next(500_000_000) as u64),
+                1 => t + 1_000_000_000 + rng.next(1_000_000_000) as u64,
+                _ => t + rng.next(200_000_000) as u64,
+            };
+            TraceEntry {
+                t_ns: t,
+                event: random_event(&mut rng),
+            }
+        })
+        .collect()
+}
+
 proptest! {
     #[test]
     fn round_trip(seed in any::<u64>(), n in 0usize..50, s in text_strategy(4)) {
@@ -242,13 +263,18 @@ proptest! {
     fn replay_reproduces_session(seed in any::<u64>(), s in text_strategy(8)) {
         let text = Text::from(s.as_str());
         let header = header_for(&text);
-        let entries = random_entries(seed, 200);
+        // Session-like times (real grouping) or arbitrary ones.
+        let entries = if seed % 2 == 0 {
+            timed_entries(seed, 200)
+        } else {
+            random_entries(seed, 200)
+        };
 
         // Live session, recorded as it runs.
         let (mut live, view) = start(&header, text.snapshot()).unwrap();
         let mut writer = TraceWriter::new(Vec::new(), &header).unwrap();
         for entry in &entries {
-            live.handle(&entry.event);
+            live.handle_at(&entry.event, Timestamp::from_nanos(entry.t_ns));
             writer.write(entry).unwrap();
         }
         let bytes = writer.into_inner().unwrap();
@@ -263,6 +289,9 @@ proptest! {
         prop_assert_eq!(ld.text(), rd.text());
         prop_assert_eq!(ld.selection(view), rd.selection(view2));
         prop_assert_eq!(ld.revision(), rd.revision());
+        prop_assert_eq!(ld.history().len(), rd.history().len());
+        prop_assert_eq!(ld.history().head(), rd.history().head());
+        prop_assert_eq!(live.now(), replayed.now());
         prop_assert_eq!(lv.top(), rv.top());
         prop_assert_eq!(lv.size(), rv.size());
         prop_assert_eq!(live.message(), replayed.message());

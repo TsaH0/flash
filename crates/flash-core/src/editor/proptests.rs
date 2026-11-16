@@ -41,6 +41,9 @@ pub(crate) fn random_event(rng: &mut Xorshift) -> Event {
         KeyCode::Char('é'),
         KeyCode::Char('\u{301}'),
         KeyCode::Char('q'),
+        KeyCode::Char('z'),
+        KeyCode::Char('Z'),
+        KeyCode::Char('y'),
         KeyCode::Enter,
         KeyCode::Tab,
         KeyCode::Backspace,
@@ -112,12 +115,19 @@ fn random_events_never_panic() {
         let mut ed = Editor::new(1 + rng.next(30) as u16, 1 + rng.next(8) as u16);
         let doc = ed.open(Text::from(text.as_str()), None);
         let views = [ed.open_view(doc).unwrap(), ed.open_view(doc).unwrap()];
+        let mut now: u64 = 0;
         for i in 0..100 {
             if i % 50 == 0 {
                 ed.set_focus(views[rng.next(2)]).unwrap();
             }
             let event = random_event(&mut rng);
-            ed.handle(&event);
+            // Mostly short steps, so typing groups; sometimes a long pause.
+            now += if rng.next(10) == 0 {
+                2_000_000_000
+            } else {
+                50_000_000
+            };
+            ed.handle_at(&event, Timestamp::from_nanos(now));
             check(&ed, &event);
         }
     }

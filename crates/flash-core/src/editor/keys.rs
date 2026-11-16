@@ -5,8 +5,14 @@
 //! exactly the skeleton's: type to insert; Enter (the document's line
 //! ending), Tab, Backspace, Delete; arrows move (Shift extends);
 //! Ctrl+arrows by word; Home/End and Ctrl+Home/End; Alt+Up/Down add a
-//! cursor; Esc keeps only the primary cursor. Ctrl+Q is handled by
-//! `Editor::handle` itself, because it works without a view.
+//! cursor; Esc keeps only the primary cursor; Ctrl+Z undoes, Ctrl+Y and
+//! Ctrl+Shift+Z redo. Ctrl+Q is handled by `Editor::handle` itself,
+//! because it works without a view. Typing keys (characters, Enter, Tab,
+//! Backspace, Delete) form one undo group until a pause, a motion or Esc,
+//! a paste, or undo/redo.
+//!
+//! Ctrl+Z conflicts with suspend, which PLAN Stage 6 also puts on Ctrl-Z;
+//! Stage 6 must move one of them (Stage 7 makes both rebindable).
 
 use std::num::NonZeroU8;
 
@@ -42,14 +48,16 @@ pub(crate) fn handle_key(editor: &mut Editor, view: ViewId, key: KeyEvent) -> Ef
         KeyCode::Char(c) if !ctrl && !alt => {
             let mut buf = [0; 4];
             let s: &str = c.encode_utf8(&mut buf);
-            editor.edit(view, |t, sel, _| Transaction::insert(t, sel, s))
+            editor.edit(view, true, |t, sel, _| Transaction::insert(t, sel, s))
         }
-        KeyCode::Enter => editor.edit(view, |t, sel, ending| {
+        KeyCode::Char('z' | 'Z') if ctrl && !alt => editor.history_step(view, modifiers.shift),
+        KeyCode::Char('y') if ctrl && !alt => editor.history_step(view, true),
+        KeyCode::Enter => editor.edit(view, true, |t, sel, ending| {
             Transaction::insert(t, sel, ending.as_str())
         }),
-        KeyCode::Tab => editor.edit(view, |t, sel, _| Transaction::insert(t, sel, "\t")),
-        KeyCode::Backspace => editor.edit(view, |t, sel, _| Transaction::backspace(t, sel)),
-        KeyCode::Delete => editor.edit(view, |t, sel, _| Transaction::delete_forward(t, sel)),
+        KeyCode::Tab => editor.edit(view, true, |t, sel, _| Transaction::insert(t, sel, "\t")),
+        KeyCode::Backspace => editor.edit(view, true, |t, sel, _| Transaction::backspace(t, sel)),
+        KeyCode::Delete => editor.edit(view, true, |t, sel, _| Transaction::delete_forward(t, sel)),
         KeyCode::Left if ctrl => editor.motion(view, word(Backward), movement),
         KeyCode::Right if ctrl => editor.motion(view, word(Forward), movement),
         KeyCode::Left => editor.motion(view, grapheme(Backward), movement),

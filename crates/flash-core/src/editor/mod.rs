@@ -10,6 +10,11 @@
 //! The layout is the skeleton's, and temporary: each view fills the
 //! screen except its last row, which the frontend uses for a status line.
 //! Only the focused view is shown and scrolled.
+//!
+//! Time is an input ([`Editor::handle_at`]): the editor never reads a
+//! clock, so replaying a trace with its recorded times groups undo steps
+//! exactly as the session did. Typing keys commit as one undo group until
+//! a pause, a motion, a paste, or an undo (PLAN Stage 5).
 
 use std::convert::Infallible;
 use std::fmt;
@@ -17,7 +22,7 @@ use std::path::PathBuf;
 
 use slotmap::SlotMap;
 
-use crate::document::{CommitError, Document, LineEnding, Revision};
+use crate::document::{CommitError, Document, LineEnding, NodeId, Record, Revision, Timestamp};
 use crate::motion::{Motion, Movement};
 use crate::selection::{Range, Selection};
 use crate::text::{Direction, Text, TextError};
@@ -96,6 +101,8 @@ pub struct Editor {
     screen: (u16, u16),
     message: String,
     quit: bool,
+    /// The time of the event being handled (the last one given).
+    now: Timestamp,
 }
 
 impl Editor {
@@ -108,6 +115,7 @@ impl Editor {
             screen: (width, height),
             message: String::new(),
             quit: false,
+            now: Timestamp::ZERO,
         }
     }
 
@@ -211,17 +219,52 @@ impl Editor {
         Ok(())
     }
 
-    /// Commits `txn` to the document of `view`, on its behalf
-    /// ([`Document::commit`]). Returns the document's revision afterwards.
+    /// Commits `txn` to the document of `view`, on its behalf, as its own
+    /// undo step at the current time ([`Document::commit_with`]). Returns
+    /// the document's revision afterwards.
     pub fn commit(&mut self, view: ViewId, txn: Transaction) -> Result<Revision, EditorError> {
+        let record = Record::step(self.now);
         let revision = self
             .document_of_mut(view)?
-            .commit(view, txn)
+            .commit_with(view, txn, record)
             .map_err(EditorError::Commit)?;
-        if let Some(focus) = self.focus {
-            self.scroll(focus);
-        }
+        self.scroll_focus();
         Ok(revision)
+    }
+
+    /// Undoes the last change to `view`'s document, on its behalf
+    /// ([`Document::undo`]). `None` if there is nothing to undo.
+    pub fn undo(&mut self, view: ViewId) -> Result<Option<Revision>, EditorError> {
+        let result = self.document_of_mut(view)?.undo(view);
+        self.scroll_focus();
+        result.map_err(EditorError::Commit)
+    }
+
+    /// Redoes the change last undone in `view`'s document
+    /// ([`Document::redo`]). `None` if there is nothing to redo.
+    pub fn redo(&mut self, view: ViewId) -> Result<Option<Revision>, EditorError> {
+        let result = self.document_of_mut(view)?.redo(view);
+        self.scroll_focus();
+        result.map_err(EditorError::Commit)
+    }
+
+    /// Moves `view`'s document to history node `node` ([`Document::goto`]).
+    pub fn goto(&mut self, view: ViewId, node: NodeId) -> Result<Option<Revision>, EditorError> {
+        let result = self.document_of_mut(view)?.goto(view, node);
+        self.scroll_focus();
+        result.map_err(EditorError::Commit)
+    }
+
+    /// Ends the open undo group of `view`'s document.
+    pub fn checkpoint(&mut self, view: ViewId) -> Result<(), EditorError> {
+        self.document_of_mut(view)?.checkpoint();
+        Ok(())
+    }
+
+    /// The time of the event being handled: the last one given to
+    /// [`handle_at`](Self::handle_at).
+    pub fn now(&self) -> Timestamp {
+        self.now
     }
 
     /// The status message: the last command's error, or empty.
@@ -238,10 +281,19 @@ impl Editor {
         self.screen
     }
 
+    /// [`handle`](Self::handle)s `event` as happening at `now` (nanoseconds
+    /// since an epoch the frontend chooses; a trace's `t_ns`). Undo groups
+    /// end when typing pauses for longer than the document's group pause.
+    pub fn handle_at(&mut self, event: &Event, now: Timestamp) -> Effects {
+        self.now = now;
+        self.handle(event)
+    }
+
     /// Applies one input event to the focused view (resizes and Ctrl+Q also
     /// without one) and scrolls the focused view so its primary cursor's
     /// line is visible. Never panics; a failed command changes nothing and
-    /// sets the message.
+    /// sets the message. The event happens at the last time given to
+    /// [`handle_at`](Self::handle_at).
     pub fn handle(&mut self, event: &Event) -> Effects {
         let mut fx = match event {
             Event::Resize { width, height } => {
@@ -269,8 +321,9 @@ impl Editor {
                 Some(view) => keys::handle_key(self, view, *key),
                 None => Effects::default(),
             },
+            // A paste is one transaction and its own undo step (PLAN 2.9).
             Event::Paste { text } => match self.focus {
-                Some(view) => self.edit(view, |t, sel, _| Transaction::insert(t, sel, text)),
+                Some(view) => self.edit(view, false, |t, sel, _| Transaction::insert(t, sel, text)),
                 None => Effects::default(),
             },
         };
@@ -282,12 +335,18 @@ impl Editor {
 
     // ---- commands used by the key map ----
 
-    /// Builds a transaction for `view` with `make` and commits it.
+    /// Builds a transaction for `view` with `make` and commits it at the
+    /// current time; `group`: as typing, which may join the open undo group.
     pub(crate) fn edit(
         &mut self,
         view: ViewId,
+        group: bool,
         make: impl FnOnce(&Text, &Selection, LineEnding) -> Result<Transaction, TransactionError>,
     ) -> Effects {
+        let record = Record {
+            time: self.now,
+            group,
+        };
         let Ok(doc) = self.document_of_mut(view) else {
             return Effects::default();
         };
@@ -295,7 +354,7 @@ impl Editor {
         let result = match doc.selection(view) {
             Some(sel) => make(doc.text(), sel, doc.line_ending())
                 .map_err(CommitError::from)
-                .and_then(|txn| doc.commit(view, txn)),
+                .and_then(|txn| doc.commit_with(view, txn, record)),
             None => Err(CommitError::NoSuchView(view)),
         };
         let changed = result.as_ref().is_ok_and(|&after| after != before);
@@ -339,7 +398,35 @@ impl Editor {
         })
     }
 
-    /// Replaces `view`'s selection with `make`'s result, validated.
+    /// Undo (`redo` false) or redo for the key map: reports a change, or
+    /// that there is nothing to do, in the message.
+    pub(crate) fn history_step(&mut self, view: ViewId, redo: bool) -> Effects {
+        let Ok(doc) = self.document_of_mut(view) else {
+            return Effects::default();
+        };
+        let before = doc.revision();
+        let result = if redo { doc.redo(view) } else { doc.undo(view) };
+        let (moved, changed) = match result {
+            Ok(Some(after)) => (true, after != before),
+            _ => (false, false),
+        };
+        let message = match result {
+            Ok(Some(_)) => None,
+            Ok(None) if redo => Some("already at the newest change".to_owned()),
+            Ok(None) => Some("already at the oldest change".to_owned()),
+            Err(e) => Some(e.to_string()),
+        };
+        Effects {
+            text: changed,
+            selection: moved,
+            message: self.report(message),
+            ..Effects::default()
+        }
+    }
+
+    /// Replaces `view`'s selection with `make`'s result, validated. Ends
+    /// the open undo group even if the selection does not change: a motion
+    /// is a boundary.
     fn reselect<E: fmt::Display>(
         &mut self,
         view: ViewId,
@@ -348,6 +435,7 @@ impl Editor {
         let Ok(doc) = self.document_of_mut(view) else {
             return Effects::default();
         };
+        doc.checkpoint();
         let Some(current) = doc.selection(view) else {
             return Effects::default();
         };
@@ -391,6 +479,12 @@ impl Editor {
     /// The text area of a view on the current screen: all but the status row.
     fn view_area(&self) -> (u16, u16) {
         (self.screen.0, self.screen.1.saturating_sub(1))
+    }
+
+    fn scroll_focus(&mut self) {
+        if let Some(focus) = self.focus {
+            self.scroll(focus);
+        }
     }
 
     /// Focus the first remaining view if the focused one is gone.

@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc b503a505556792560168568eca6090db7a3c0be21ced484675f093828779ac7c # shrinks to (s, sel, intents) = ("", Selection { ranges: [Range { anchor: 0, head: 0, goal_column: None }], primary: 0 }, [Insert("a"), Insert("a")])
+cc 29efaeadbddc5a136343d37b8d35b390297cedb26e1a7ddfccd2c0ec7691b2c3 # shrinks to (s, sels, steps) = ("\r\n", [Selection { ranges: [Range { anchor: 0, head: 0, goal_column: None }], primary: 0 }, Selection { ranges: [Range { anchor: 0, head: 0, goal_column: None }], primary: 0 }, Selection { ranges: [Range { anchor: 0, head: 0, goal_column: None }], primary: 0 }], [Edit { view: Index(0), intent: Replace("a"), group: false, dt_ms: 0 }, Goto(Index(0), Index(4)), Redo(Index(12058986622543094294)), Edit { view: Index(756315894525519590), intent: Insert("\r\n"), group: false, dt_ms: 38 }, Edit { view: Index(15545216573724132284), intent: Backspace, group: true, dt_ms: 991 }, Edit { view: Index(12495560099519535153), intent: Backspace, group: true, dt_ms: 181 }])
