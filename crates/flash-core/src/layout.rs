@@ -199,6 +199,12 @@ impl Layout {
         // marks only describe their own line's prefix.
     }
 
+    /// Where `offset` is, laying its line out from the start (no cache):
+    /// O(line). For readers without a view's cache.
+    pub fn locate_from_start(config: LayoutConfig, text: &Text, offset: usize) -> Option<Location> {
+        Layout::new(config).locate(text, offset)
+    }
+
     /// Where `offset` is, extending the marks of its line as far as it.
     /// `None` if `offset` is not a valid offset in `text`. The layout must
     /// be [`sync`](Self::sync)ed with the document of `text`.
@@ -254,6 +260,32 @@ impl Layout {
             row_start,
             row_column,
         })
+    }
+
+    /// Row `row` of `line` with wrapping (its last row if there are fewer),
+    /// extending the marks as far as it.
+    fn row_at(&mut self, text: &Text, line: usize, row: usize) -> Option<Row> {
+        let width = self.config.wrap?;
+        let range = text.line_range(line).ok()?;
+        let tab = self.config.tab_width;
+        let marks = self.marks_mut(range.start, range.end);
+        let i = marks.partition_point(|m| m.row <= row) - 1;
+        let m = marks[i];
+        let (mut s, mut c, mut index) = (m.offset, m.column, m.row);
+        loop {
+            let r = lay_row(text, range.end, s, c, tab, width.get())?;
+            if r.last || index == row {
+                return Some(Row {
+                    index,
+                    start: s,
+                    end: r.end,
+                    column: c,
+                    last: r.last,
+                });
+            }
+            extend(marks, r.end, r.end_col, index + 1, r.read, text.byte_len());
+            (s, c, index) = (r.end, r.end_col, index + 1);
+        }
     }
 
     /// The number of rows of `line` (1 without wrapping), extending its
@@ -421,6 +453,65 @@ impl crate::motion::Columns for Layout {
         let marks = &self.lines.iter().find(|l| l.start == start)?.marks;
         let i = marks.partition_point(|m| m.column <= goal);
         i.checked_sub(1).map(|i| (marks[i].offset, marks[i].column))
+    }
+
+    /// Wrapped rows: `count` rows from `head`'s, crossing lines, at the
+    /// first non-zero-width grapheme of the target row covering the goal
+    /// (a visual column), else the row's last grapheme (the line end on
+    /// a line's last row). Stops at the first and last rows.
+    fn row(
+        &mut self,
+        text: &Text,
+        head: usize,
+        count: usize,
+        direction: Direction,
+        goal: Option<usize>,
+    ) -> Option<(usize, usize)> {
+        self.config.wrap?;
+        let loc = self.locate(text, head)?;
+        let goal = goal.unwrap_or(loc.visual_column());
+        let (mut line, mut row) = (loc.line, loc.row);
+        for _ in 0..count {
+            match direction {
+                Direction::Forward => {
+                    if row + 1 < self.row_count(text, line)? {
+                        row += 1;
+                    } else if line + 1 < text.line_count() {
+                        (line, row) = (line + 1, 0);
+                    } else {
+                        break;
+                    }
+                }
+                Direction::Backward => {
+                    if row > 0 {
+                        row -= 1;
+                    } else if line > 0 {
+                        line -= 1;
+                        row = self.row_count(text, line)? - 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        let r = self.row_at(text, line, row)?;
+        let tab = self.config.tab_width;
+        let (mut pos, mut column) = (r.start, r.column);
+        let mut last = r.start;
+        for g in text.graphemes(r.start, Direction::Forward).ok()? {
+            if pos >= r.end {
+                break;
+            }
+            let w = grapheme_width(&g, column, tab);
+            let visual = column - r.column;
+            if w > 0 && visual <= goal && goal < visual + w {
+                return Some((pos, goal));
+            }
+            last = pos;
+            column += w;
+            pos += g.len();
+        }
+        Some((if r.last { r.end } else { last }, goal))
     }
 }
 

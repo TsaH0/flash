@@ -90,11 +90,21 @@ fn motion_of(ed: &Editor, v: ViewId, name: &str, count: usize) -> Option<Motion>
             direction: Forward,
             tab_width,
         },
+        "row-up" => Motion::Row {
+            count,
+            direction: Backward,
+            tab_width,
+        },
+        "row-down" => Motion::Row {
+            count,
+            direction: Forward,
+            tab_width,
+        },
         _ => return None,
     })
 }
 
-const MOTIONS: [&str; 12] = [
+const MOTIONS: [&str; 14] = [
     "left",
     "right",
     "up",
@@ -107,6 +117,8 @@ const MOTIONS: [&str; 12] = [
     "document-end",
     "page-up",
     "page-down",
+    "row-up",
+    "row-down",
 ];
 
 static COMMANDS: &[(&str, &str, Body)] = &[

@@ -22,8 +22,10 @@ use crossterm::cursor::{Hide, MoveTo, SetCursorStyle, Show};
 use crossterm::queue;
 use crossterm::style::{Attribute, Print, SetAttribute};
 use crossterm::terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate};
-use flash_core::width::{display_column, grapheme_width};
-use flash_core::{CursorShape, Direction, Document, Editor, Prompt, Selection, View, key_name};
+use flash_core::width::grapheme_width;
+use flash_core::{
+    CursorShape, Direction, Document, Editor, Layout, Prompt, Selection, Text, View, key_name,
+};
 
 /// Builds frames into a buffer it keeps between frames.
 #[derive(Debug, Default)]
@@ -93,41 +95,82 @@ fn frame(out: &mut Vec<u8>, editor: &Editor, latency_ns: u64, use_layout: bool) 
         .unwrap_or_else(|| selection.primary().head());
     // Where the cursor is: recorded by the view when it scrolled, if still
     // current, so a long line is not walked again.
-    let layout = view.layout();
-    let current =
-        use_layout && layout.revision() == doc.revision() && layout.config().tab_width == tab;
-    let (head_line, column) = match view.cursor().filter(|c| current && c.offset == head) {
-        Some(c) => (c.line, c.column),
+    // Without the cache (tests), a fresh layout lays every line out from
+    // its start: its marks are never current.
+    let fresh = Layout::new(view.layout().config());
+    let layout = if use_layout { view.layout() } else { &fresh };
+    let current = use_layout
+        && layout.revision() == doc.revision()
+        && layout.config() == view.layout().config();
+    let cursor_at = match view.cursor().filter(|c| current && c.offset == head) {
+        Some(c) => Some(*c),
         // O(length of the head's line).
-        None => (
-            text.line_of_offset(head).unwrap_or(0),
-            display_column(text, head, tab).unwrap_or(0),
-        ),
+        None => Layout::locate_from_start(layout.config(), text, head),
     };
-    for row in 0..rows {
-        queue!(out, MoveTo(0, row as u16))?;
-        let line = view.top() + row;
-        if line < text.line_count() {
-            // Long lines start drawing at the layout's last mark before
-            // the left column.
-            let start = use_layout.then(|| layout.start_before(doc, line, view.left()));
-            render_line(
-                out,
-                doc,
-                selection,
-                line,
-                row as u16,
-                view.left(),
-                cols,
-                tab,
-                start,
-            )?;
+    let (head_line, column) = cursor_at.map_or((0, 0), |c| (c.line, c.column));
+    // The screen row and column of the cursor, if drawn.
+    let mut cursor_cell = None;
+    if view.options().soft_wrap {
+        // Rows from the top row of the top line on.
+        let mut y = 0;
+        let mut line = view.top();
+        let mut first = view.top_row();
+        'rows: while y < rows && line < text.line_count() {
+            for r in layout.rows(doc, line, first) {
+                if y >= rows {
+                    break 'rows;
+                }
+                if let Some(c) = cursor_at.filter(|c| c.line == line && c.row == r.index) {
+                    let x = c.visual_column();
+                    cursor_cell = (x < cols).then_some((x as u16, y as u16));
+                }
+                queue!(out, MoveTo(0, y as u16))?;
+                render_span(
+                    out,
+                    text,
+                    selection,
+                    r.start..r.end,
+                    r.last,
+                    y as u16,
+                    r.column,
+                    cols,
+                    tab,
+                    (r.start, r.column),
+                )?;
+                end_row(out)?;
+                y += 1;
+            }
+            line += 1;
+            first = 0;
         }
-        queue!(
-            out,
-            SetAttribute(Attribute::Reset),
-            Clear(ClearType::UntilNewLine)
-        )?;
+        for y in y..rows {
+            queue!(out, MoveTo(0, y as u16))?;
+            end_row(out)?;
+        }
+    } else {
+        for row in 0..rows {
+            queue!(out, MoveTo(0, row as u16))?;
+            let line = view.top() + row;
+            if let Ok(content) = text.line_range(line) {
+                // Long lines start drawing at the layout's last mark before
+                // the left column.
+                let from = layout.start_before(doc, line, view.left());
+                render_span(
+                    out,
+                    text,
+                    selection,
+                    content,
+                    true,
+                    row as u16,
+                    view.left(),
+                    cols,
+                    tab,
+                    from,
+                )?;
+            }
+            end_row(out)?;
+        }
+        cursor_cell = cursor_in_view(view, head_line, column, cols, rows);
     }
 
     let cursor = match editor.prompt() {
@@ -135,7 +178,7 @@ fn frame(out: &mut Vec<u8>, editor: &Editor, latency_ns: u64, use_layout: bool) 
         None => {
             let status = status_line(editor, doc, selection, head_line, column, latency_ns);
             bottom_line(out, (status, None), width, height)?;
-            cursor_in_view(view, head_line, column, cols, rows)
+            cursor_cell
         }
     };
     if let Some((x, y)) = cursor {
@@ -147,6 +190,15 @@ fn frame(out: &mut Vec<u8>, editor: &Editor, latency_ns: u64, use_layout: bool) 
         queue!(out, MoveTo(x, y), style, Show)?;
     }
     queue!(out, EndSynchronizedUpdate)
+}
+
+/// Ends a drawn row: default attributes, the rest of the row cleared.
+fn end_row(out: &mut Vec<u8>) -> io::Result<()> {
+    queue!(
+        out,
+        SetAttribute(Attribute::Reset),
+        Clear(ClearType::UntilNewLine)
+    )
 }
 
 /// The primary cursor's cell, if it is inside the text area.
@@ -273,31 +325,32 @@ fn per_char_width(g: &str) -> usize {
         .sum()
 }
 
-/// Draws one line's content (on screen row `row`) from display column
-/// `left`, `width` cells wide. Cells inside a non-empty range, and
-/// secondary cursors, are drawn reversed. Walks from the line start, or
-/// from `start` (a grapheme boundary on the line and its display column,
-/// at or before `left`). O(log n + log k + columns from the start to
-/// `left + width`).
+/// Draws `span` of a line (a whole line's content, or one wrapped row) on
+/// screen row `row`: the cells from logical column `left`, `width` wide.
+/// Cells inside a non-empty range, and secondary cursors, are drawn
+/// reversed; `eol`: the span ends the line, so a secondary cursor at its
+/// end is drawn after it. Walks from `from` (a grapheme boundary in the
+/// span, or its start, at or before `left`, and its logical column).
+/// O(log n + log k + columns from `from` to `left + width`).
 #[allow(clippy::too_many_arguments)]
-fn render_line(
+fn render_span(
     out: &mut Vec<u8>,
-    doc: &Document,
+    text: &Text,
     selection: &Selection,
-    line: usize,
+    span: std::ops::Range<usize>,
+    eol: bool,
     row: u16,
     left: usize,
     width: usize,
     tab: NonZeroU8,
-    start: Option<(usize, usize)>,
+    from: (usize, usize),
 ) -> io::Result<()> {
-    let text = doc.text();
-    let Ok(content) = text.line_range(line) else {
-        return Ok(());
+    let content = span;
+    let (from, from_column) = if content.contains(&from.0) || from.0 == content.end {
+        from
+    } else {
+        (content.start, 0)
     };
-    let (from, from_column) = start
-        .filter(|&(offset, _)| content.contains(&offset) || offset == content.end)
-        .unwrap_or((content.start, 0));
     let Ok(graphemes) = text.graphemes(from, Direction::Forward) else {
         return Ok(());
     };
@@ -362,7 +415,7 @@ fn render_line(
         pos += g.len();
     }
     // A secondary cursor at the end of the line.
-    if pos == content.end && (left..right).contains(&column) && marked(content.end) {
+    if eol && pos == content.end && (left..right).contains(&column) && marked(content.end) {
         queue!(out, SetAttribute(Attribute::Reverse), Print(' '))?;
     }
     Ok(())

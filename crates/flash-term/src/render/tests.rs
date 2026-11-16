@@ -333,6 +333,57 @@ fn the_layout_cache_matches_walking_from_the_line_start() {
     );
 }
 
+fn soft_wrapped(s: &str, width: u16, height: u16) -> Editor {
+    let mut ed = editor_with(s, width, height);
+    ed.set_option(
+        flash_core::Scope::Global,
+        flash_core::OptionId::SOFT_WRAP,
+        flash_core::OptionValue::Bool(true),
+    )
+    .unwrap();
+    ed
+}
+
+#[test]
+fn soft_wrap_draws_rows_and_the_cursor_on_its_row() {
+    let mut ed = soft_wrapped("hello world foo\nbar", 11, 5);
+    let s = screen(&ed);
+    assert_eq!(s.row(0).trim_end(), "hello");
+    assert_eq!(s.row(1).trim_end(), "world foo");
+    assert_eq!(s.row(2).trim_end(), "bar");
+    assert_eq!(s.cursor, Some((0, 0)));
+    // The cursor on "foo" is on the second row.
+    for _ in 0..12 {
+        ed.handle(&plain_key(KeyCode::Right));
+    }
+    assert_eq!(screen(&ed).cursor, Some((6, 1)));
+    // Down goes to the next logical line.
+    ed.handle(&plain_key(KeyCode::Down));
+    assert_eq!(screen(&ed).cursor, Some((3, 2)));
+    let view = ed.view(ed.focus().unwrap()).unwrap();
+    assert_eq!(view.left(), 0);
+}
+
+#[test]
+fn soft_wrap_scrolls_by_rows_inside_a_long_line() {
+    // One line of 50 rows in a 3-row view: the cursor at its end shows
+    // the last rows of the line.
+    let line = "abcdefghij".repeat(50);
+    let mut ed = soft_wrapped(&line, 10, 4);
+    ed.handle(&plain_key(KeyCode::End));
+    let view = ed.view(ed.focus().unwrap()).unwrap();
+    assert_eq!((view.top(), view.top_row()), (0, 48));
+    let s = screen(&ed);
+    assert_eq!(s.row(0), "abcdefghij");
+    assert_eq!(s.row(1), "abcdefghij");
+    // The cursor cell after the full last row is on an empty row.
+    assert_eq!(s.row(2).trim_end(), "");
+    assert_eq!(s.cursor, Some((0, 2)));
+    ed.handle(&plain_key(KeyCode::Home));
+    let view = ed.view(ed.focus().unwrap()).unwrap();
+    assert_eq!((view.top(), view.top_row()), (0, 0));
+}
+
 fn plain_key(code: KeyCode) -> Event {
     plain(code)
 }
@@ -505,6 +556,14 @@ fn random_events_render_cleanly() {
             .map(|_| PIECES[next(PIECES.len() as u64)])
             .collect();
         let mut ed = editor_with(&text, 1 + next(30) as u16, 1 + next(8) as u16);
+        if next(2) == 0 {
+            ed.set_option(
+                flash_core::Scope::Global,
+                flash_core::OptionId::SOFT_WRAP,
+                flash_core::OptionValue::Bool(true),
+            )
+            .unwrap();
+        }
         let mut renderer = Renderer::new();
         let mut plain_renderer = Renderer::new();
         for _ in 0..100 {

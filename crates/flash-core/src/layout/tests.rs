@@ -106,6 +106,53 @@ fn locations_on_wrapped_rows() {
     assert_eq!(layout.locate(&t, 99), None);
 }
 
+/// `g j` / `g k`: by wrapped rows with hints, else exactly by lines.
+#[test]
+fn row_motion_moves_by_wrapped_rows() {
+    use crate::motion::{Motion, Movement};
+    use crate::selection::Range;
+    let t = Text::from("hello world foo\nbar");
+    let rows = |count, dir, from: usize, wrap| {
+        let motion = Motion::Row {
+            count,
+            direction: dir,
+            tab_width: NonZeroU8::new(4).unwrap(),
+        };
+        let mut layout = Layout::new(config(4, wrap));
+        let r = motion
+            .apply_range_with(&t, Range::point(from), Movement::Move, &mut layout)
+            .unwrap();
+        (r.head(), r.goal_column())
+    };
+    // "hello " / "world foo" / "bar" at width 11. From the f of foo
+    // (row 1, visual column 6): up lands on the row's last grapheme,
+    // the space; down goes to the next line's end.
+    assert_eq!(rows(1, Direction::Backward, 12, Some(11)), (5, Some(6)));
+    assert_eq!(rows(1, Direction::Forward, 12, Some(11)), (19, Some(6)));
+    // From the w (row 1, column 0) up: the h.
+    assert_eq!(rows(1, Direction::Backward, 6, Some(11)), (0, Some(0)));
+    // Two rows down from the h: the b of bar.
+    assert_eq!(rows(2, Direction::Forward, 0, Some(11)), (16, Some(0)));
+    // Stops at the edges.
+    assert_eq!(rows(5, Direction::Backward, 3, Some(11)), (3, Some(3)));
+    // Without wrapping it is vertical motion.
+    for from in 0..=t.byte_len() {
+        for dir in [Direction::Forward, Direction::Backward] {
+            let vertical = Motion::Vertical {
+                count: 1,
+                direction: dir,
+                tab_width: NonZeroU8::new(4).unwrap(),
+            }
+            .apply_range(&t, Range::point(from), Movement::Move)
+            .unwrap();
+            assert_eq!(
+                rows(1, dir, from, None),
+                (vertical.head(), vertical.goal_column())
+            );
+        }
+    }
+}
+
 /// A long line laid out once: later queries near the cursor walk only
 /// near it, also after edits there.
 #[test]
@@ -168,6 +215,7 @@ enum Op {
     StartBefore(prop::sample::Index, usize),
     ExtendTo(prop::sample::Index, usize),
     Vertical(prop::sample::Index, usize, bool, Option<usize>),
+    RowMotion(prop::sample::Index, usize, bool, Option<usize>),
     Configure(u8, Option<usize>),
 }
 
@@ -183,6 +231,8 @@ fn op() -> impl Strategy<Value = Op> {
         1 => (ix(), 0..80usize).prop_map(|(l, c)| Op::ExtendTo(l, c)),
         2 => (ix(), 1..4usize, any::<bool>(), prop::option::of(0..80usize))
             .prop_map(|(o, n, down, goal)| Op::Vertical(o, n, down, goal)),
+        2 => (ix(), 1..4usize, any::<bool>(), prop::option::of(0..20usize))
+            .prop_map(|(o, n, down, goal)| Op::RowMotion(o, n, down, goal)),
         1 => (1..9u8, prop::option::of(1..14usize)).prop_map(|(t, w)| Op::Configure(t, w)),
     ]
 }
@@ -262,6 +312,17 @@ proptest! {
                     };
                     let hinted = motion.apply_range_with(&text, range, Movement::Move, &mut layout);
                     prop_assert_eq!(hinted, motion.apply_range(&text, range, Movement::Move));
+                }
+                Op::RowMotion(i, count, down, goal) => {
+                    use crate::motion::Columns;
+                    let o = floor_boundary(&string, i.index(string.len() + 1));
+                    let dir = if down { Direction::Forward } else { Direction::Backward };
+                    let cached = layout.row(&text, o, count, dir, goal);
+                    let fresh = Layout::new(c).row(&text, o, count, dir, goal);
+                    prop_assert_eq!(cached, fresh);
+                    if let Some((head, _)) = cached {
+                        prop_assert!(text.is_grapheme_boundary(head));
+                    }
                 }
                 Op::ExtendTo(i, left) => {
                     layout.extend_to_column(&text, i.index(lines), left);

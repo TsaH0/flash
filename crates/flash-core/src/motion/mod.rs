@@ -71,6 +71,14 @@ pub enum Motion {
         direction: Direction,
         tab_width: NonZeroU8,
     },
+    /// `count` screen rows up or down: with a soft-wrapping view's
+    /// [`Columns`] hints, by wrapped rows, keeping a goal column within
+    /// the row; otherwise exactly [`Motion::Vertical`].
+    Row {
+        count: usize,
+        direction: Direction,
+        tab_width: NonZeroU8,
+    },
     /// Offset 0.
     DocumentStart,
     /// The end of the text.
@@ -87,6 +95,20 @@ pub trait Columns {
     /// A grapheme boundary on `line` whose display column is at most
     /// `goal`, and that column.
     fn before(&mut self, text: &Text, line: usize, goal: usize) -> Option<(usize, usize)>;
+    /// For [`Motion::Row`] when lines wrap: the new head and the goal
+    /// column (within the row) after moving `count` wrapped rows from
+    /// `head` with goal `goal`. `None`: rows are lines.
+    fn row(
+        &mut self,
+        text: &Text,
+        head: usize,
+        count: usize,
+        direction: Direction,
+        goal: Option<usize>,
+    ) -> Option<(usize, usize)> {
+        let _ = (text, head, count, direction, goal);
+        None
+    }
 }
 
 /// No hints: walk every line from its start.
@@ -198,6 +220,17 @@ impl Motion {
                 let (head, goal) = vertical(text, range, count, direction, tab_width, columns)?;
                 (head, Some(goal))
             }
+            Motion::Row {
+                count,
+                direction,
+                tab_width,
+            } => match columns.row(text, head, count, direction, range.goal_column()) {
+                Some((head, goal)) => (head, Some(goal)),
+                None => {
+                    let (head, goal) = vertical(text, range, count, direction, tab_width, columns)?;
+                    (head, Some(goal))
+                }
+            },
             Motion::DocumentStart => (0, None),
             Motion::DocumentEnd => (text.byte_len(), None),
         })
