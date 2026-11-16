@@ -211,6 +211,7 @@ pub struct Editor {
     count: Option<std::num::NonZeroUsize>,
     /// `:wq`: quit once the pending save succeeds.
     quit_after_save: bool,
+    config_errors: Vec<ConfigError>,
     /// Wall time of the last commit, for instrumentation only.
     last_commit_ns: u64,
 }
@@ -239,6 +240,7 @@ impl Editor {
             keymap: Keymap::default(),
             count: None,
             quit_after_save: false,
+            config_errors: Vec::new(),
             last_commit_ns: 0,
         };
         builtin::register(&mut editor);

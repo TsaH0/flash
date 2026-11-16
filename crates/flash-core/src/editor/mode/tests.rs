@@ -252,7 +252,7 @@ fn the_command_line_runs_commands_and_sets_options() {
     assert_eq!(ed.tab_width().get(), 8, "global unchanged");
     ed.command_line("set tab-width");
     assert_eq!(ed.message(), "tab-width = 2", "as the focused view sees it");
-    ed.command_line("set tab-width 99");
+    ed.command_line("set tab-width 999");
     assert!(ed.message().contains("tab-width"), "{}", ed.message());
     ed.command_line("move-right");
     assert_eq!(ranges(&ed, v), [(1, 2)], "any command by name");

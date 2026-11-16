@@ -13,7 +13,7 @@ fn key(c: char, modifiers: Modifiers) -> Event {
 fn run_requests(ed: &mut Editor) -> Vec<u8> {
     let mut out = Vec::new();
     for r in ed.take_requests() {
-        execute(ed, r, &mut out).unwrap();
+        execute(ed, r, &mut out, &Settings::default()).unwrap();
     }
     out
 }
@@ -72,7 +72,13 @@ fn open_errors_are_messages() {
     let bin = dir.path().join("bin");
     fs::write(&bin, b"\xff").unwrap();
     let mut ed = Editor::new(40, 10);
-    let fx = execute(&mut ed, Request::Open { path: bin }, &mut Vec::new()).unwrap();
+    let fx = execute(
+        &mut ed,
+        Request::Open { path: bin },
+        &mut Vec::new(),
+        &Settings::default(),
+    )
+    .unwrap();
     assert!(matches!(fx, Outcome::Done(e) if e.message));
     assert!(ed.message().contains("UTF-8"));
     assert_eq!(ed.documents().count(), 0);
@@ -82,6 +88,7 @@ fn open_errors_are_messages() {
             path: PathBuf::from(dir.path()),
         },
         &mut Vec::new(),
+        &Settings::default(),
     )
     .unwrap();
     assert!(ed.message().contains("not a regular file"));
@@ -91,15 +98,27 @@ fn open_errors_are_messages() {
 fn clipboard_writes_osc52_or_reports_size() {
     let mut ed = Editor::new(40, 10);
     let mut out = Vec::new();
-    execute(&mut ed, Request::Clipboard { text: "hi".into() }, &mut out).unwrap();
+    execute(
+        &mut ed,
+        Request::Clipboard { text: "hi".into() },
+        &mut out,
+        &Settings::default(),
+    )
+    .unwrap();
     assert_eq!(out, b"\x1b]52;c;aGk=\x07");
     let big = "x".repeat(osc52::MAX_TEXT + 1);
     let mut out = Vec::new();
-    execute(&mut ed, Request::Clipboard { text: big }, &mut out).unwrap();
+    execute(
+        &mut ed,
+        Request::Clipboard { text: big },
+        &mut out,
+        &Settings::default(),
+    )
+    .unwrap();
     assert!(out.is_empty());
     assert!(ed.message().contains("too large"));
     assert_eq!(
-        execute(&mut ed, Request::Suspend, &mut out).unwrap(),
+        execute(&mut ed, Request::Suspend, &mut out, &Settings::default()).unwrap(),
         Outcome::Suspend
     );
 }

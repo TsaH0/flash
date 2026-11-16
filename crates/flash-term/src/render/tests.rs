@@ -14,6 +14,8 @@ struct Screen {
     cells: Vec<Vec<char>>,
     reversed: Vec<Vec<bool>>,
     cursor: Option<(usize, usize)>,
+    /// The last DECSCUSR cursor style (2 block, 4 underline, 6 bar).
+    cursor_style: Option<usize>,
 }
 
 impl Screen {
@@ -24,7 +26,7 @@ impl Screen {
     }
 
     /// Interprets the escapes crossterm emits for a frame: CUP, EL, ED,
-    /// SGR 0/7/27, cursor show/hide, synchronized update. With `per_char`,
+    /// SGR 0/7/27, cursor show/hide and style, synchronized update. With `per_char`,
     /// a terminal that does not join clusters: every char takes its own
     /// width, and cells past the right edge are clipped.
     fn emulate(bytes: &[u8], w: usize, h: usize, per_char: bool) -> Screen {
@@ -32,6 +34,7 @@ impl Screen {
         let mut cells = vec![vec![' '; w]; h];
         let mut reversed = vec![vec![false; w]; h];
         let (mut x, mut y, mut rev, mut shown) = (0usize, 0usize, false, false);
+        let mut cursor_style = None;
         let mut prev: Option<char> = None;
         let mut chars = s.chars().peekable();
         while let Some(c) = chars.next() {
@@ -75,6 +78,9 @@ impl Screen {
                             }
                         }
                     }
+                    'q' if params.ends_with(' ') => {
+                        cursor_style = params.trim_end().parse().ok();
+                    }
                     'h' if params == "?25" => shown = true,
                     'l' if params == "?25" => shown = false,
                     'h' | 'l' => {}
@@ -116,6 +122,7 @@ impl Screen {
             cells,
             reversed,
             cursor: shown.then_some((x, y)),
+            cursor_style,
         }
     }
 
@@ -166,14 +173,19 @@ fn screen(ed: &Editor) -> Screen {
 
 #[test]
 fn draws_lines_status_and_cursor() {
-    let mut ed = editor_with("hello\nworld", 20, 4);
+    let mut ed = editor_with("hello\nworld", 40, 4);
     ed.handle(&plain(KeyCode::Down));
     ed.handle(&plain(KeyCode::End));
     let s = screen(&ed);
     assert_eq!(s.row(0), "hello");
     assert_eq!(s.row(1), "world");
     assert_eq!(s.row(2), "");
-    assert!(s.row(3).starts_with("[scratch]  2:6  1 µs"), "{}", s.row(3));
+    assert!(
+        s.row(3).starts_with("INSERT  [scratch]  2:6  1 µs"),
+        "{}",
+        s.row(3)
+    );
+    assert_eq!(s.cursor_style, Some(6), "a bar in insert mode");
     assert!(s.reversed[3][0], "status line is reversed");
     assert_eq!(s.cursor, Some((5, 1)));
     let bytes = frame(&ed);
@@ -183,7 +195,7 @@ fn draws_lines_status_and_cursor() {
 
 #[test]
 fn status_shows_path_modified_cursors_and_message() {
-    let mut ed = Editor::new(60, 3);
+    let mut ed = Editor::new(70, 3);
     let doc = ed.open(Text::from("ab"), Some(PathBuf::from("dir/a.txt")));
     let view = ed.open_view(doc).unwrap();
     ed.set_mode(view, flash_core::ModeId::INSERT);
@@ -200,7 +212,7 @@ fn status_shows_path_modified_cursors_and_message() {
     )));
     let status = screen(&ed).row(2);
     assert!(
-        status.starts_with("dir/a.txt [+]  2 cursors  1:1"),
+        status.starts_with("INSERT  dir/a.txt [+]  2 cursors  1:1"),
         "{status}"
     );
     assert!(status.ends_with("nothing selected"), "{status}");
@@ -526,4 +538,45 @@ fn random_events_render_cleanly() {
             }
         }
     }
+}
+
+/// Normal mode: the cursor cell is the block's grapheme (not the head
+/// after it), the status line names the mode and the keys typed so far,
+/// and the cursor is a block; the prompt's is a bar.
+#[test]
+fn normal_mode_draws_the_block_and_shows_the_mode() {
+    let mut ed = Editor::new(40, 3);
+    let doc = ed.open(Text::from("ab漢cd\nxy"), None);
+    ed.open_view(doc).unwrap();
+    let s = screen(&ed);
+    assert_eq!(s.cursor, Some((0, 0)));
+    assert!(s.reversed[0][0] && !s.reversed[0][1], "the block is drawn");
+    assert!(
+        s.row(2).starts_with("NORMAL  [scratch]  1:1"),
+        "{}",
+        s.row(2)
+    );
+    assert_eq!(s.cursor_style, Some(2), "a steady block");
+    for c in ['l', 'l'] {
+        ed.handle(&plain(KeyCode::Char(c)));
+    }
+    let s = screen(&ed);
+    assert_eq!(s.cursor, Some((2, 0)), "on 漢, not after it");
+    assert!(
+        s.row(2).starts_with("NORMAL  [scratch]  1:3"),
+        "{}",
+        s.row(2)
+    );
+    ed.handle(&plain(KeyCode::Char('2')));
+    ed.handle(&plain(KeyCode::Char('g')));
+    assert!(
+        screen(&ed).row(2).starts_with("NORMAL 2 g  "),
+        "{}",
+        screen(&ed).row(2)
+    );
+    ed.handle(&plain(KeyCode::Esc));
+    ed.handle(&plain(KeyCode::Char(':')));
+    let s = screen(&ed);
+    assert_eq!(s.row(2), ":");
+    assert_eq!(s.cursor_style, Some(6), "the prompt's bar");
 }

@@ -17,6 +17,7 @@ fn header_for(text: &Text) -> TraceHeader {
         hash: content_hash(text),
         size: (40, 12),
         cursor: 0,
+        config: None,
     }
 }
 

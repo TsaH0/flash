@@ -35,7 +35,7 @@ use std::time::{Duration, Instant};
 use crossterm::event as ct;
 use crossterm::terminal;
 use flash_app::latency::{Stages, Timing};
-use flash_app::requests::{self, Outcome};
+use flash_app::requests::{self, Outcome, Settings};
 use flash_core::trace::{
     self, DEFAULT_MAX_LINE, TRACE_VERSION, TraceEntry, TraceHeader, TraceReader, TraceSource,
     TraceWriter,
@@ -45,8 +45,8 @@ use flash_term::{Renderer, convert, terminal as term};
 use signal_hook::consts::signal::{SIGCONT, SIGHUP, SIGINT, SIGSTOP, SIGTERM, SIGTSTP};
 use signal_hook::iterator::Signals;
 
-const USAGE: &str =
-    "usage: flash [--tab-width N] [file]\n       flash --replay <trace>\n       flash --help";
+const USAGE: &str = "usage: flash [--config <file>] [--tab-width N] [file]\n       \
+                     flash --replay <trace> [--config <file>]\n       flash --help";
 
 /// How long one batch may keep draining queued events before rendering.
 const DRAIN_BUDGET: Duration = Duration::from_millis(8);
@@ -58,8 +58,18 @@ fn main() -> ExitCode {
             println!("{USAGE}");
             return ExitCode::SUCCESS;
         }
-        Ok(Command::Replay(trace)) => replay(&trace).map(|()| Exit::Quit),
-        Ok(Command::Edit { path, tab_width }) => run(path.as_deref(), tab_width),
+        Ok(Command::Replay { trace, config }) => replay(&trace, config).map(|()| Exit::Quit),
+        Ok(Command::Edit {
+            path,
+            tab_width,
+            config,
+        }) => run(
+            path.as_deref(),
+            &Settings {
+                config: Settings::config_path(config),
+                tab_width,
+            },
+        ),
         Err(message) => {
             eprintln!("flash: {message}\n{USAGE}");
             return ExitCode::from(2);
@@ -77,39 +87,57 @@ fn main() -> ExitCode {
 
 enum Command {
     Help,
-    Replay(PathBuf),
+    Replay {
+        trace: PathBuf,
+        config: Option<PathBuf>,
+    },
     Edit {
         path: Option<PathBuf>,
-        tab_width: NonZeroU8,
+        tab_width: Option<NonZeroU8>,
+        config: Option<PathBuf>,
     },
 }
 
 fn parse(args: &[OsString]) -> Result<Command, String> {
     let mut path = None;
-    let mut tab_width = Editor::DEFAULT_TAB_WIDTH;
+    let mut tab_width = None;
+    let mut config = None;
+    let mut replay = None;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.to_str() {
             Some("--help" | "-h") => return Ok(Command::Help),
             Some("--replay") => {
                 let trace = it.next().ok_or("--replay needs a trace file")?;
-                if it.next().is_some() || path.is_some() {
-                    return Err("--replay takes only a trace file".to_owned());
-                }
-                return Ok(Command::Replay(PathBuf::from(trace)));
+                replay = Some(PathBuf::from(trace));
+            }
+            Some("--config") => {
+                let file = it.next().ok_or("--config needs a file")?;
+                config = Some(PathBuf::from(file));
             }
             Some("--tab-width") => {
                 let n = it.next().and_then(|n| n.to_str()?.parse::<u8>().ok());
-                tab_width = n
-                    .and_then(NonZeroU8::new)
-                    .ok_or("--tab-width needs a number from 1 to 255")?;
+                tab_width = Some(
+                    n.and_then(NonZeroU8::new)
+                        .ok_or("--tab-width needs a number from 1 to 255")?,
+                );
             }
             Some(flag) if flag.starts_with("--") => return Err(format!("unknown option {flag}")),
             _ if path.is_none() => path = Some(PathBuf::from(arg)),
             _ => return Err("only one file can be opened from the command line".to_owned()),
         }
     }
-    Ok(Command::Edit { path, tab_width })
+    match replay {
+        Some(_) if path.is_some() || tab_width.is_some() => {
+            Err("--replay takes only a trace file (and --config)".to_owned())
+        }
+        Some(trace) => Ok(Command::Replay { trace, config }),
+        None => Ok(Command::Edit {
+            path,
+            tab_width,
+            config,
+        }),
+    }
 }
 
 /// How the editor ended.
@@ -146,7 +174,7 @@ fn initial_document(path: Option<&Path>) -> Result<Document, String> {
     }
 }
 
-fn run(path: Option<&Path>, tab_width: NonZeroU8) -> Result<Exit, String> {
+fn run(path: Option<&Path>, settings: &Settings) -> Result<Exit, String> {
     if let Some(path) = path {
         for var in ["FLASH_TRACE", "FLASH_LATENCY_LOG"] {
             if let Some(out) = env::var_os(var) {
@@ -166,6 +194,10 @@ fn run(path: Option<&Path>, tab_width: NonZeroU8) -> Result<Exit, String> {
         return Err("standard input and output must be a terminal".to_owned());
     }
     let (width, height) = terminal::size().unwrap_or((80, 24));
+    // The config first: options such as the default line ending apply to
+    // the document as it opens.
+    let mut editor = Editor::new(width, height);
+    let (_, config_hash) = requests::load_config(&mut editor, settings);
 
     let mut recorder = match env::var_os("FLASH_TRACE") {
         Some(trace_path) => {
@@ -179,6 +211,7 @@ fn run(path: Option<&Path>, tab_width: NonZeroU8) -> Result<Exit, String> {
                 hash: trace::content_hash(document.text()),
                 size: (width, height),
                 cursor: 0,
+                config: config_hash,
             };
             let file = File::create(&trace_path)
                 .map_err(|e| format!("{}: {e}", Path::new(&trace_path).display()))?;
@@ -187,8 +220,6 @@ fn run(path: Option<&Path>, tab_width: NonZeroU8) -> Result<Exit, String> {
         None => None,
     };
 
-    let mut editor = Editor::new(width, height);
-    editor.set_tab_width(tab_width);
     editor.open_document(document);
 
     let (tx, rx) = mpsc::channel();
@@ -232,6 +263,7 @@ fn run(path: Option<&Path>, tab_width: NonZeroU8) -> Result<Exit, String> {
         &mut stages,
         &mut recorder,
         &mut trace_error,
+        settings,
     );
     drop(guard);
     signal_handle.close();
@@ -290,9 +322,18 @@ fn event_loop(
     stages: &mut Stages,
     recorder: &mut Option<TraceWriter<BufWriter<File>>>,
     trace_error: &mut Option<String>,
+    settings: &Settings,
 ) -> io::Result<Exit> {
     let mut entries: Vec<TraceEntry> = Vec::new();
-    let result = run_loop(editor, rx, stages, &mut entries, recorder, trace_error);
+    let result = run_loop(
+        editor,
+        rx,
+        stages,
+        &mut entries,
+        recorder,
+        trace_error,
+        settings,
+    );
     record(&mut entries, recorder, trace_error);
     result
 }
@@ -304,6 +345,7 @@ fn run_loop(
     entries: &mut Vec<TraceEntry>,
     recorder: &mut Option<TraceWriter<BufWriter<File>>>,
     trace_error: &mut Option<String>,
+    settings: &Settings,
 ) -> io::Result<Exit> {
     let session = Instant::now();
     let mut out = BufWriter::with_capacity(1 << 16, io::stdout());
@@ -352,7 +394,7 @@ fn run_loop(
                 Msg::Signal(sig) => return Ok(Exit::Signal(sig)),
             }
             for request in editor.take_requests() {
-                match requests::execute(editor, request, &mut out)? {
+                match requests::execute(editor, request, &mut out, settings)? {
                     Outcome::Done(fx) => redraw |= fx.needs_redraw(),
                     Outcome::Suspend => {
                         out.flush()?;
@@ -409,7 +451,10 @@ fn run_loop(
 /// recorded time, each frame rendered into a memory sink; prints one JSON
 /// latency summary line. Requests are dropped: a replay never touches a
 /// file or the terminal.
-fn replay(trace_path: &Path) -> Result<(), String> {
+/// Replays a trace headless and prints latency. Keys mean what a config
+/// binds them to: `config` (or the default keymap) is applied, and a
+/// mismatch with the recorded config is reported on stderr.
+fn replay(trace_path: &Path, config: Option<PathBuf>) -> Result<(), String> {
     let file = File::open(trace_path).map_err(|e| format!("{}: {e}", trace_path.display()))?;
     let at = |e: trace::TraceError| format!("{}: {e}", trace_path.display());
     let mut reader = TraceReader::new(BufReader::new(file), DEFAULT_MAX_LINE).map_err(at)?;
@@ -428,6 +473,26 @@ fn replay(trace_path: &Path) -> Result<(), String> {
         }
     };
     let (mut editor, _) = trace::start(reader.header(), text).map_err(at)?;
+    let settings = Settings {
+        config,
+        tab_width: None,
+    };
+    let (_, hash) = requests::load_config(&mut editor, &settings);
+    if !editor.config_errors().is_empty() || hash != reader.header().config {
+        let recorded = reader
+            .header()
+            .config
+            .map_or("none".to_owned(), |h| format!("{h:x}"));
+        let given = hash.map_or("none".to_owned(), |h| format!("{h:x}"));
+        eprintln!(
+            "flash: warning: the trace was recorded with config {recorded}, replaying with {given}{}",
+            if editor.config_errors().is_empty() {
+                ""
+            } else {
+                " (with skipped entries)"
+            }
+        );
+    }
     let mut renderer = Renderer::new();
     let mut sink: Vec<u8> = Vec::with_capacity(1 << 16);
     let mut stages = Stages::default();

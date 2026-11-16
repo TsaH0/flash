@@ -61,6 +61,7 @@ fn trace_for(fx: &Fixture, text: &Text, width: u16, height: u16) -> (TraceHeader
         hash: trace::content_hash(text),
         size: (width, height),
         cursor: middle as u64,
+        config: None,
     };
     let events = pattern();
     let mut writer = TraceWriter::new(Vec::new(), &header).unwrap();

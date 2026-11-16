@@ -2,7 +2,7 @@
 //! `--replay`.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use flash_core::trace::{
@@ -40,6 +40,7 @@ fn usage_and_help() {
     assert_eq!(out.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("--replay") && stdout.contains("--tab-width"));
+    assert!(stdout.contains("--config"));
     for bad in [
         &["--bogus"][..],
         &["--tab-width"],
@@ -47,6 +48,9 @@ fn usage_and_help() {
         &["--tab-width", "300"],
         &["a", "b"],
         &["--replay"],
+        &["--config"],
+        &["--replay", "t.jsonl", "file.txt"],
+        &["--replay", "t.jsonl", "--tab-width", "4"],
     ] {
         let out = flash().args(bad).output().unwrap();
         assert_eq!(out.status.code(), Some(2), "{bad:?}");
@@ -102,6 +106,7 @@ fn replay_prints_latency_summary() {
         hash: content_hash(&Text::from("hello\nworld\n")),
         size: (80, 24),
         cursor: 0,
+        config: None,
     };
     let events = [
         Event::Key(KeyEvent::plain(KeyCode::Char('x'))),
@@ -128,6 +133,54 @@ fn replay_prints_latency_summary() {
     assert_eq!(fs::read_to_string(&doc).unwrap(), "hello\nworld\n");
 }
 
+/// Keys mean what the config binds them to: replaying with a different
+/// config than the one recorded warns (and still replays).
+#[test]
+fn replay_warns_when_the_config_differs() {
+    let dir = scratch("replay_warns_when_the_config_differs");
+    let doc = dir.join("doc.txt");
+    fs::write(&doc, "hello\n").unwrap();
+    let config = dir.join("config.toml");
+    let config_text = "[keys.normal]\nq = \"move-right\"\n";
+    fs::write(&config, config_text).unwrap();
+    let header = TraceHeader {
+        flash_trace: TRACE_VERSION,
+        document: TraceSource::Path(doc.display().to_string()),
+        len: 6,
+        hash: content_hash(&Text::from("hello\n")),
+        size: (80, 24),
+        cursor: 0,
+        config: Some(content_hash(&Text::from(config_text))),
+    };
+    let trace = dir.join("session.jsonl");
+    write_trace(
+        &trace,
+        &header,
+        &[Event::Key(KeyEvent::plain(KeyCode::Char('q')))],
+    );
+    let without = flash().arg("--replay").arg(&trace).output().unwrap();
+    assert!(without.status.success());
+    assert!(
+        String::from_utf8_lossy(&without.stderr)
+            .contains("warning: the trace was recorded with config")
+    );
+    let with = flash()
+        .args([
+            Path::new("--replay"),
+            &trace,
+            Path::new("--config"),
+            &config,
+        ])
+        .output()
+        .unwrap();
+    assert!(with.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&with.stderr),
+        "",
+        "the same config: no warning"
+    );
+}
+
 #[test]
 fn replay_rejects_bad_traces() {
     let dir = scratch("replay_rejects_bad_traces");
@@ -140,6 +193,7 @@ fn replay_rejects_bad_traces() {
         hash: 0,
         size: (80, 24),
         cursor: 0,
+        config: None,
     };
     let mismatch = dir.join("mismatch.jsonl");
     write_trace(&mismatch, &header, &[]);

@@ -238,6 +238,10 @@ static COMMANDS: &[(&str, &str, Body)] = &[
     ("next-view", "Focus the next view.", |ed, _| {
         ed.cycle_view(true)
     }),
+    ("config-reload", "Read the config file again.", |ed, _| {
+        ed.request(Request::LoadConfig);
+        Effects::default()
+    }),
     ("previous-view", "Focus the previous view.", |ed, _| {
         ed.cycle_view(false)
     }),

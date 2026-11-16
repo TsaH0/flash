@@ -57,7 +57,9 @@ impl Session {
             .stdout(slave.try_clone().unwrap())
             .stderr(Stdio::piped())
             .env_remove("FLASH_TRACE")
-            .env_remove("FLASH_LATENCY_LOG");
+            .env_remove("FLASH_LATENCY_LOG")
+            // Hermetic: never the user's own config file.
+            .env("XDG_CONFIG_HOME", "/nonexistent/flash-test-config");
         for (k, v) in env {
             cmd.env(k, v);
         }
@@ -164,6 +166,10 @@ impl Session {
                 > entered
         );
         assert!(out.rfind("\u{1b}[?25h").expect("showed the cursor") > entered);
+        assert!(
+            out.rfind("\u{1b}[0 q").expect("reset the cursor shape") > entered,
+            "cursor shape"
+        );
     }
 }
 
@@ -299,6 +305,35 @@ fn a_recorded_session_replays() {
     );
     assert!(String::from_utf8_lossy(&out.stdout).contains(r#""events":6"#));
     assert_eq!(fs::read_to_string(&doc).unwrap(), "abc\n");
+}
+
+/// PLAN Stage 7: a config file binds keys at startup, and after the file
+/// changes `:config-reload` applies the new bindings without a restart.
+#[test]
+fn a_config_file_binds_keys_and_reloads_at_runtime() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = dir.path().join("doc.txt");
+    let config = dir.path().join("config.toml");
+    fs::write(&doc, "abc\n").unwrap();
+    fs::write(&config, "[keys.normal]\nQ = \"insert-text one\"\n").unwrap();
+    let mut s = Session::start(&[Path::new("--config"), &config, &doc], &[]);
+    s.wait_ready();
+    s.wait_until("the config message", |s| {
+        s.text().contains("config: loaded")
+    });
+    s.send(b"Q");
+    fs::write(&config, "[keys.normal]\nQ = \"insert-text two\"\n").unwrap();
+    s.send(b":config-reload\r");
+    s.wait_until("the reload", |s| {
+        s.text().matches("config: loaded").count() >= 2
+    });
+    s.send(b"Q\x13\x11");
+    let status = s.wait_exit();
+    assert!(status.success(), "{status:?}: {}", s.stderr());
+    // Each inserted at the head of the selection, which grows to cover
+    // what was inserted: the reloaded binding's text comes second.
+    assert_eq!(fs::read_to_string(&doc).unwrap(), "aonetwobc\n");
+    s.assert_restored();
 }
 
 /// Not a check: measures the whole interactive path (input thread,

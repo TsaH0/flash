@@ -33,6 +33,9 @@ pub enum Request {
     Clipboard { text: String },
     /// Suspend the process (restore the terminal, stop, resume).
     Suspend,
+    /// Read the user's config file again and pass it to
+    /// [`Editor::load_config`].
+    LoadConfig,
 }
 
 fn display(path: &Path) -> String {

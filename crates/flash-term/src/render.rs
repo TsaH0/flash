@@ -18,12 +18,12 @@
 use std::io::{self, Write};
 use std::num::NonZeroU8;
 
-use crossterm::cursor::{Hide, MoveTo, Show};
+use crossterm::cursor::{Hide, MoveTo, SetCursorStyle, Show};
 use crossterm::queue;
 use crossterm::style::{Attribute, Print, SetAttribute};
 use crossterm::terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate};
 use flash_core::width::{display_column, grapheme_width};
-use flash_core::{Direction, Document, Editor, Prompt, Selection, View};
+use flash_core::{CursorShape, Direction, Document, Editor, Prompt, Selection, View, key_name};
 
 /// Builds frames into a buffer it keeps between frames.
 #[derive(Debug, Default)]
@@ -141,7 +141,12 @@ fn frame(out: &mut Vec<u8>, editor: &Editor, latency_ns: u64, anchors: bool) -> 
         }
     };
     if let Some((x, y)) = cursor {
-        queue!(out, MoveTo(x, y), Show)?;
+        let style = match editor.cursor_shape(Some(focus)) {
+            CursorShape::Block => SetCursorStyle::SteadyBlock,
+            CursorShape::Bar => SetCursorStyle::SteadyBar,
+            CursorShape::Underline => SetCursorStyle::SteadyUnderScore,
+        };
+        queue!(out, MoveTo(x, y), style, Show)?;
     }
     queue!(out, EndSynchronizedUpdate)
 }
@@ -178,8 +183,21 @@ fn status_line(
     } else {
         format!("  {n} cursors")
     };
+    // The input mode, and keys or a count typed so far.
+    let mode = editor
+        .modes()
+        .info(editor.input_mode())
+        .map_or_else(String::new, |m| m.name.to_uppercase());
+    let mut pending = String::new();
+    if let Some(count) = editor.count() {
+        pending.push_str(&format!(" {count}"));
+    }
+    for &key in editor.keymap().pending() {
+        pending.push(' ');
+        pending.push_str(&key_name(key));
+    }
     format!(
-        "{name}{modified}{cursors}  {}:{}  {} µs  {}",
+        "{mode}{pending}  {name}{modified}{cursors}  {}:{}  {} µs  {}",
         line + 1,
         column + 1,
         latency_ns / 1_000,

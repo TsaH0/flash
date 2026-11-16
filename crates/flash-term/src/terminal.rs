@@ -28,6 +28,7 @@ pub fn restore() {
         out,
         DisableBracketedPaste,
         LeaveAlternateScreen,
+        crossterm::cursor::SetCursorStyle::DefaultUserShape,
         crossterm::cursor::Show
     );
     let _ = out.flush();

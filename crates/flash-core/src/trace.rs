@@ -52,6 +52,10 @@ pub struct TraceHeader {
     pub size: (u16, u16),
     /// Starting cursor offset.
     pub cursor: u64,
+    /// [`content_hash`] of the user config the session ran with, if any
+    /// (Stage 7: keys mean what the config binds them to).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<u64>,
 }
 
 /// One recorded event.
@@ -132,6 +136,7 @@ impl<R: BufRead> TraceReader<R> {
                 hash: 0,
                 size: (0, 0),
                 cursor: 0,
+                config: None,
             },
             max_line,
             line: 0,

@@ -33,7 +33,7 @@ fn values_parse_format_and_validate() {
     let tab = OptionId::TAB_WIDTH;
     assert_eq!(o.parse(tab, "8"), Ok(OptionValue::Int(8)));
     assert_eq!(o.format(tab, OptionValue::Int(8)), "8");
-    for bad in ["0", "17", "-1", "x", "", "4.0"] {
+    for bad in ["0", "256", "-1", "x", "", "4.0"] {
         assert!(
             matches!(o.parse(tab, bad), Err(OptionError::Invalid { .. })),
             "{bad:?}"
@@ -143,7 +143,7 @@ fn scopes_resolve_view_then_document_then_global_then_default() {
     );
     assert!(ed.set_option_text(Scope::Global, "no-such", "1").is_err());
     assert!(
-        ed.set_option_text(Scope::Global, "tab-width", "99")
+        ed.set_option_text(Scope::Global, "tab-width", "999")
             .is_err()
     );
     assert_eq!(tab(&ed, v1), 4, "a refused value changes nothing");

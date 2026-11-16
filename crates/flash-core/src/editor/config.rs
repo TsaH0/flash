@@ -63,6 +63,29 @@ struct Checked {
 }
 
 impl Editor {
+    /// Applies the user's config file (`text`, or `None` if there is none,
+    /// which clears the user layer) from `source`, and says on the status
+    /// line how it went. The skipped entries are in
+    /// [`config_errors`](Self::config_errors).
+    pub fn load_config(&mut self, source: &str, text: Option<&str>) -> super::Effects {
+        let errors = self.apply_config(Owner::CONFIG, source, text.unwrap_or(""));
+        let message = match (text, errors.first()) {
+            (_, Some(first)) if errors.len() == 1 => format!("config: 1 entry skipped: {first}"),
+            (_, Some(first)) => {
+                format!("config: {} entries skipped; first: {first}", errors.len())
+            }
+            (Some(_), None) => format!("config: loaded {source}"),
+            (None, None) => String::new(),
+        };
+        self.config_errors = errors;
+        self.notify(message)
+    }
+
+    /// The entries the last [`load_config`](Self::load_config) skipped.
+    pub fn config_errors(&self) -> &[ConfigError] {
+        &self.config_errors
+    }
+
     /// Checks and applies config `text` from `source` as `owner`'s layer
     /// ([`Owner::DEFAULTS`] or [`Owner::CONFIG`]), replacing that owner's
     /// previous bindings and values. Returns the entries it skipped.

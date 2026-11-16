@@ -147,7 +147,7 @@ impl Options {
             (
                 "tab-width",
                 "Columns per tab stop.",
-                OptionKind::Int { min: 1, max: 16 },
+                OptionKind::Int { min: 1, max: 255 },
                 OptionValue::Int(4),
             ),
             (
