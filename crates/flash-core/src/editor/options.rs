@@ -33,6 +33,7 @@ impl OptionId {
     pub const UNDO_GROUP_MAX_BYTES: OptionId = OptionId(5);
     pub const KITTY_KEYBOARD: OptionId = OptionId(6);
     pub const SOFT_WRAP: OptionId = OptionId(7);
+    pub const STATUS_LATENCY: OptionId = OptionId(8);
 }
 
 /// What values an option takes.
@@ -148,7 +149,7 @@ impl Options {
     /// at the IDs of the `OptionId` constants.
     pub(crate) fn with_builtins() -> Options {
         let mut o = Options::default();
-        let builtins: [(&str, &str, OptionKind, OptionValue); 8] = [
+        let builtins: [(&str, &str, OptionKind, OptionValue); 9] = [
             (
                 "tab-width",
                 "Columns per tab stop.",
@@ -203,6 +204,12 @@ impl Options {
             (
                 "soft-wrap",
                 "Wrap long lines at the view's width (at a space if one fits) instead of scrolling sideways.",
+                OptionKind::Bool,
+                OptionValue::Bool(false),
+            ),
+            (
+                "status-latency",
+                "Show the last key's latency (read to flush) on the status line.",
                 OptionKind::Bool,
                 OptionValue::Bool(false),
             ),

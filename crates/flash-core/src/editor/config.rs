@@ -9,6 +9,9 @@
 //! "g g" = "move-document-start"
 //! "C-s" = false            # unbind
 //! "Q" = "insert-text TODO" # a command with an argument
+//!
+//! [theme]
+//! "ui.selection" = { bg = "#264f78" }
 //! ```
 //!
 //! The default keymap is the embedded `default-config.toml`, applied by
@@ -19,6 +22,7 @@
 //! else applies (a config never prevents startup). Applying replaces the
 //! owner's previous layers and values as a whole, after checking.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -26,6 +30,7 @@ use super::keymap::{Bind, KeySeq, parse_sequence};
 use super::mode::ModeId;
 use super::owner::Owner;
 use super::{Editor, OptionId, OptionValue};
+use crate::theme::{Style, UI_SCOPES};
 
 #[cfg(test)]
 mod tests;
@@ -60,6 +65,7 @@ impl std::error::Error for ConfigError {}
 struct Checked {
     options: Vec<(OptionId, OptionValue)>,
     keys: Vec<(ModeId, Vec<(KeySeq, Bind)>)>,
+    theme: BTreeMap<String, Style>,
 }
 
 impl Editor {
@@ -114,6 +120,7 @@ impl Editor {
         for (mode, binds) in checked.keys {
             self.keymap.set_layer(owner, mode, binds);
         }
+        self.theme.set_layer(owner == Owner::CONFIG, checked.theme);
         self.refresh_options();
         errors
     }
@@ -122,6 +129,7 @@ impl Editor {
         let mut checked = Checked {
             options: Vec::new(),
             keys: Vec::new(),
+            theme: BTreeMap::new(),
         };
         let error = |entry: String, reason: String| ConfigError {
             source: source.to_owned(),
@@ -191,9 +199,26 @@ impl Editor {
                         checked.keys.push((mode, layer));
                     }
                 }
+                ("theme", toml::Value::Table(styles)) => {
+                    for (scope, value) in styles {
+                        let entry = format!("theme.{scope:?}");
+                        // `ui.*` names are a fixed set (a typo would do
+                        // nothing); other names are for syntax (Stage 9).
+                        if scope.starts_with("ui.") && !UI_SCOPES.contains(&scope.as_str()) {
+                            errors.push(error(entry, "unknown ui scope".into()));
+                            continue;
+                        }
+                        match Style::from_toml(value) {
+                            Ok(style) => {
+                                checked.theme.insert(scope.clone(), style);
+                            }
+                            Err(reason) => errors.push(error(entry, reason)),
+                        }
+                    }
+                }
                 (name, _) => errors.push(error(
                     name.to_owned(),
-                    "unknown section (expected [options] or [keys.<mode>])".into(),
+                    "unknown section (expected [options], [keys.<mode>], or [theme])".into(),
                 )),
             }
         }

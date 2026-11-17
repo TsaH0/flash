@@ -15,6 +15,7 @@ pub mod motion;
 pub mod search;
 pub mod selection;
 pub mod text;
+pub mod theme;
 pub mod trace;
 pub mod transaction;
 pub mod width;
@@ -38,8 +39,9 @@ pub use editor::{
     CursorShape, DEFAULT_CONFIG, DocumentId, Editor, EditorError, EditorEvent, Effects, Event,
     EventKinds, HookId, KeyCode, KeyError, KeyEvent, KeySeq, Keymap, ModeError, ModeFlags, ModeId,
     ModeInfo, Modes, Modifiers, OptionError, OptionId, OptionInfo, OptionKind, OptionValue,
-    Options, Owner, Prompt, PromptKind, Request, Resolved, SEARCH_INLINE_MAX, SaveSnapshot, Scope,
-    SearchDone, SearchJob, Step, View, ViewId, ViewOptions, key_name, parse_key, parse_sequence,
+    Options, Owner, Prompt, PromptKind, Rect, Request, Resolved, SEARCH_INLINE_MAX, SaveSnapshot,
+    Scope, SearchDone, SearchJob, Separator, Step, View, ViewId, ViewOptions, key_name, parse_key,
+    parse_sequence,
 };
 pub use layout::{Layout, LayoutConfig, Location, Row};
 pub use motion::{Columns, Motion, Movement, NoColumns};

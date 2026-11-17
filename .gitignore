@@ -15,3 +15,6 @@
 
 # Local archives
 /tree.zip
+
+# Local agent settings and worktrees
+/.claude/

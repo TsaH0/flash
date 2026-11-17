@@ -69,6 +69,8 @@ pub struct Timing {
     /// Bytes the frame wrote (0 without a frame): what the terminal still
     /// has to parse and repaint after `flush` returns (PLAN section 4).
     pub bytes: u64,
+    /// Cells the frame wrote (0 without a frame).
+    pub cells: u64,
 }
 
 /// Timings of many events, summarised per stage.
@@ -112,8 +114,9 @@ impl Stages {
             ("layout", |t| t.layout),
             ("flush", |t| t.flush),
         ];
-        // Not a time: summarised in its own object after "stages".
+        // Not times: summarised in their own objects after "stages".
         let bytes = summarize(&pick(|t| t.bytes))?;
+        let cells = summarize(&pick(|t| t.cells))?;
         for (i, (name, f)) in stages.into_iter().enumerate() {
             let s = summarize(&pick(f))?;
             if i > 0 {
@@ -125,8 +128,8 @@ impl Stages {
             ));
         }
         json.push_str(&format!(
-            r#"}},"frame_bytes":{{"p50":{},"p95":{},"p99":{},"max":{}}}}}"#,
-            bytes.p50, bytes.p95, bytes.p99, bytes.max
+            r#"}},"frame_bytes":{{"p50":{},"p95":{},"p99":{},"max":{}}},"frame_cells":{{"p50":{},"p95":{},"p99":{},"max":{}}}}}"#,
+            bytes.p50, bytes.p95, bytes.p99, bytes.max, cells.p50, cells.p95, cells.p99, cells.max
         ));
         Some(json)
     }
@@ -174,6 +177,7 @@ mod tests {
                 layout: 20,
                 flush: 30,
                 bytes: 1000 * i,
+                cells: 10 * i,
             });
         }
         let json = st.to_json(r#""source":"t""#).unwrap();
@@ -187,7 +191,7 @@ mod tests {
             "{json}"
         );
         assert!(
-            json.ends_with(r#","frame_bytes":{"p50":3000,"p95":4000,"p99":4000,"max":4000}}"#),
+            json.ends_with(r#","frame_bytes":{"p50":3000,"p95":4000,"p99":4000,"max":4000},"frame_cells":{"p50":30,"p95":40,"p99":40,"max":40}}"#),
             "{json}"
         );
         assert_eq!(st.len(), 4);

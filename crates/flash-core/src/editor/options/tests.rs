@@ -21,6 +21,7 @@ fn builtins_are_at_their_constant_ids() {
             (OptionId::UNDO_GROUP_MAX_BYTES, "undo-group-max-bytes"),
             (OptionId::KITTY_KEYBOARD, "kitty-keyboard"),
             (OptionId::SOFT_WRAP, "soft-wrap"),
+            (OptionId::STATUS_LATENCY, "status-latency"),
         ]
     );
     assert!(
@@ -92,7 +93,7 @@ fn registering_removing_and_owners() {
     o.remove_owner(plugin);
     assert_eq!((o.id("a"), o.id("b")), (None, None));
     assert!(o.info(b).is_none());
-    assert_eq!(o.iter().count(), 8, "built-ins stay");
+    assert_eq!(o.iter().count(), 9, "built-ins stay");
 }
 
 #[test]

@@ -6,10 +6,15 @@ use std::path::PathBuf;
 use flash_core::{Editor, Event, KeyCode, KeyEvent, Modifiers, Range, Selection, Text};
 
 use super::Renderer;
+use crate::emit::Strategy;
 use flash_core::width::grapheme_width;
 
-/// What a terminal shows after a frame: characters (`'\0'` for the right
-/// half of a wide character), reverse-video flags, and the cursor.
+/// What a terminal shows: characters (`'\0'` for the right half of a
+/// wide character), reverse-video and underline flags, and the cursor.
+/// Frames are applied in turn, as a terminal would see them, so a frame
+/// that writes only what changed is checked against the screen it
+/// changes.
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Screen {
     cells: Vec<Vec<char>>,
     reversed: Vec<Vec<bool>>,
@@ -17,30 +22,80 @@ struct Screen {
     cursor: Option<(usize, usize)>,
     /// The last DECSCUSR cursor style (2 block, 4 underline, 6 bar).
     cursor_style: Option<usize>,
+    term: Term,
+}
+
+/// Cells, reverse and underline flags, and the cursor.
+type Shows<'a> = (
+    &'a [Vec<char>],
+    &'a [Vec<bool>],
+    &'a [Vec<bool>],
+    Option<(usize, usize)>,
+);
+
+/// The emulated terminal's state between frames.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Term {
+    w: usize,
+    h: usize,
+    x: usize,
+    y: usize,
+    rev: bool,
+    under: bool,
+    shown: bool,
+    per_char: bool,
 }
 
 impl Screen {
+    /// A blank terminal. With `per_char`, one that does not join
+    /// clusters: every char takes its own width, and cells past the right
+    /// edge are clipped.
+    fn new(w: usize, h: usize, per_char: bool) -> Screen {
+        Screen {
+            cells: vec![vec![' '; w]; h],
+            reversed: vec![vec![false; w]; h],
+            underlined: vec![vec![false; w]; h],
+            cursor: None,
+            cursor_style: None,
+            term: Term {
+                w,
+                h,
+                x: 0,
+                y: 0,
+                rev: false,
+                under: false,
+                shown: false,
+                per_char,
+            },
+        }
+    }
+
     /// A terminal that measures grapheme clusters as `unicode-width`
-    /// does (as the renderer assumes).
+    /// does (as the renderer assumes), after one frame.
     fn of(bytes: &[u8], w: usize, h: usize) -> Screen {
         Screen::emulate(bytes, w, h, false)
     }
 
-    /// Interprets the escapes crossterm emits for a frame: CUP, EL, ED,
-    /// SGR 0/7/27, cursor show/hide and style, synchronized update. With `per_char`,
-    /// a terminal that does not join clusters: every char takes its own
-    /// width, and cells past the right edge are clipped.
     fn emulate(bytes: &[u8], w: usize, h: usize, per_char: bool) -> Screen {
+        let mut s = Screen::new(w, h, per_char);
+        s.apply(bytes);
+        s
+    }
+
+    /// What the screen shows (not how the terminal got there).
+    fn shows(&self) -> Shows<'_> {
+        (&self.cells, &self.reversed, &self.underlined, self.cursor)
+    }
+
+    /// Interprets a frame: CUP, EL, ED, SGR (attributes, colors skipped),
+    /// cursor show/hide and style, synchronized update.
+    fn apply(&mut self, bytes: &[u8]) {
         let s = std::str::from_utf8(bytes).expect("frames are UTF-8");
-        let mut cells = vec![vec![' '; w]; h];
-        let mut reversed = vec![vec![false; w]; h];
-        let mut underlined = vec![vec![false; w]; h];
-        let mut under = false;
-        let (mut x, mut y, mut rev, mut shown) = (0usize, 0usize, false, false);
-        let mut cursor_style = None;
+        let (w, h, per_char) = (self.term.w, self.term.h, self.term.per_char);
         let mut prev: Option<char> = None;
         let mut chars = s.chars().peekable();
         while let Some(c) = chars.next() {
+            let t = &mut self.term;
             if c == '\u{1b}' {
                 prev = None;
                 assert_eq!(chars.next(), Some('['), "only CSI escapes in frames");
@@ -59,39 +114,47 @@ impl Screen {
                     .collect();
                 match final_byte {
                     'H' => {
-                        y = nums.first().copied().unwrap_or(1) - 1;
-                        x = nums.get(1).copied().unwrap_or(1) - 1;
+                        t.y = nums.first().copied().unwrap_or(1) - 1;
+                        t.x = nums.get(1).copied().unwrap_or(1) - 1;
                     }
                     'K' => {
-                        for i in x..w {
-                            cells[y][i] = ' ';
-                            reversed[y][i] = false;
+                        for i in t.x..w {
+                            self.cells[t.y][i] = ' ';
+                            self.reversed[t.y][i] = false;
+                            self.underlined[t.y][i] = false;
                         }
                     }
                     'J' => {
-                        cells = vec![vec![' '; w]; h];
-                        reversed = vec![vec![false; w]; h];
+                        self.cells = vec![vec![' '; w]; h];
+                        self.reversed = vec![vec![false; w]; h];
+                        self.underlined = vec![vec![false; w]; h];
                     }
                     'm' => {
-                        for n in if nums.is_empty() { vec![0] } else { nums } {
-                            match n {
+                        let nums = if nums.is_empty() { vec![0] } else { nums };
+                        let mut i = 0;
+                        while i < nums.len() {
+                            match nums[i] {
                                 0 => {
-                                    rev = false;
-                                    under = false;
+                                    t.rev = false;
+                                    t.under = false;
                                 }
-                                27 => rev = false,
-                                7 => rev = true,
-                                4 => under = true,
-                                24 => under = false,
+                                27 => t.rev = false,
+                                7 => t.rev = true,
+                                4 => t.under = true,
+                                24 => t.under = false,
+                                // Extended colors: skip their arguments.
+                                38 | 48 if nums.get(i + 1) == Some(&5) => i += 2,
+                                38 | 48 if nums.get(i + 1) == Some(&2) => i += 4,
                                 _ => {}
                             }
+                            i += 1;
                         }
                     }
                     'q' if params.ends_with(' ') => {
-                        cursor_style = params.trim_end().parse().ok();
+                        self.cursor_style = params.trim_end().parse().ok();
                     }
-                    'h' if params == "?25" => shown = true,
-                    'l' if params == "?25" => shown = false,
+                    'h' if params == "?25" => t.shown = true,
+                    'l' if params == "?25" => t.shown = false,
                     'h' | 'l' => {}
                     other => panic!("unexpected CSI {params}{other}"),
                 }
@@ -110,32 +173,29 @@ impl Screen {
             if cw == 0 {
                 continue;
             }
-            if per_char && x + cw > w {
-                x = w;
+            if per_char && t.x + cw > w {
+                t.x = w;
                 continue;
             }
             assert!(
-                x + cw <= w,
-                "{c:?} drawn past the right edge at {x}, row {y} of {h}: {:?}",
-                cells[y].iter().collect::<String>()
+                t.x + cw <= w,
+                "{c:?} drawn past the right edge at {}, row {} of {h}: {:?}",
+                t.x,
+                t.y,
+                self.cells[t.y].iter().collect::<String>()
             );
-            cells[y][x] = c;
-            reversed[y][x] = rev;
-            underlined[y][x] = under;
+            let (x, y) = (t.x, t.y);
+            self.cells[y][x] = c;
+            self.reversed[y][x] = t.rev;
+            self.underlined[y][x] = t.under;
             if cw == 2 {
-                cells[y][x + 1] = '\0';
-                reversed[y][x + 1] = rev;
-                underlined[y][x + 1] = under;
+                self.cells[y][x + 1] = '\0';
+                self.reversed[y][x + 1] = t.rev;
+                self.underlined[y][x + 1] = t.under;
             }
-            x += cw;
+            t.x += cw;
         }
-        Screen {
-            cells,
-            reversed,
-            underlined,
-            cursor: shown.then_some((x, y)),
-            cursor_style,
-        }
+        self.cursor = self.term.shown.then_some((self.term.x, self.term.y));
     }
 
     fn row(&self, y: usize) -> String {
@@ -193,10 +253,11 @@ fn draws_lines_status_and_cursor() {
     assert_eq!(s.row(1), "world");
     assert_eq!(s.row(2), "");
     assert!(
-        s.row(3).starts_with("INSERT  [scratch]  2:6  1 µs"),
+        s.row(3).starts_with("INSERT  [scratch]  2:6"),
         "{}",
         s.row(3)
     );
+    assert!(!s.row(3).contains("µs"), "no latency unless asked for");
     assert_eq!(s.cursor_style, Some(6), "a bar in insert mode");
     assert!(s.reversed[3][0], "status line is reversed");
     assert_eq!(s.cursor, Some((5, 1)));
@@ -234,7 +295,9 @@ fn status_shows_path_modified_cursors_and_message() {
 fn replaces_control_characters_and_drops_bidi_overrides() {
     let ed = editor_with("a\u{1b}[2Jb\u{7}c\u{202E}d", 80, 3);
     let bytes = frame(&ed);
-    assert!(!bytes.windows(4).any(|w| w == b"\x1b[2J"));
+    // Only the renderer's own clear of a first frame.
+    let clears = |b: &[u8]| b.windows(4).filter(|w| *w == b"\x1b[2J").count();
+    assert_eq!(clears(&bytes), 1);
     assert!(!bytes.contains(&0x07));
     let s = Screen::of(&bytes, 80, 3);
     assert_eq!(s.row(0), "a\u{fffd}[2Jb\u{fffd}cd");
@@ -245,7 +308,7 @@ fn replaces_control_characters_and_drops_bidi_overrides() {
     );
     ed.open_view(doc).unwrap();
     let bytes = frame(&ed);
-    assert!(!bytes.windows(4).any(|w| w == b"\x1b[2J"));
+    assert_eq!(clears(&bytes), 1);
     assert!(!String::from_utf8_lossy(&bytes).contains('\u{202E}'));
 }
 
@@ -317,8 +380,6 @@ fn the_layout_cache_matches_walking_from_the_line_start() {
         format!("x\n{line}\ny"),
     ] {
         let mut ed = editor_with(&text, 17, 4);
-        let mut plain = Renderer::new();
-        plain.use_layout = false;
         for i in 0..400 {
             let key = if i % 97 < 60 {
                 KeyCode::Right
@@ -326,8 +387,10 @@ fn the_layout_cache_matches_walking_from_the_line_start() {
                 KeyCode::Left
             };
             ed.handle(&plain_key(key));
-            let anchored = Renderer::new().frame(&ed, 0).to_vec();
-            assert_eq!(plain.frame(&ed, 0), &anchored[..], "step {i}");
+            let cached = Renderer::new().frame(&ed, 0).to_vec();
+            let mut plain = Renderer::new();
+            plain.use_layout = false;
+            assert_eq!(plain.frame(&ed, 0), &cached[..], "step {i}");
         }
     }
     // The cache is used: a long line starts drawing near the left column,
@@ -423,6 +486,82 @@ fn search_matches_are_underlined_until_cleared() {
     );
     let s = screen(&ed);
     assert!(s.underlined.iter().flatten().all(|&u| !u));
+}
+
+#[test]
+fn the_latency_is_on_the_status_line_when_asked_for() {
+    let mut ed = editor_with("x", 40, 3);
+    ed.set_option(
+        flash_core::Scope::Global,
+        flash_core::OptionId::STATUS_LATENCY,
+        flash_core::OptionValue::Bool(true),
+    )
+    .unwrap();
+    assert!(screen(&ed).row(2).contains("  1 µs"), "{}", screen(&ed).row(2));
+}
+
+/// A cursor move rewrites the status line's position and moves the
+/// cursor: tens of bytes, not a screen.
+#[test]
+fn small_changes_write_few_bytes() {
+    let text: String = (0..30).map(|i| format!("line {i} of some text\n")).collect();
+    let mut ed = editor_with(&text, 80, 24);
+    let mut r = Renderer::new();
+    let first = r.frame(&ed, 0).len();
+    assert!(first > 500, "the first frame is whole: {first}");
+    ed.handle(&plain_key(KeyCode::Right));
+    let moved = r.frame(&ed, 0).len();
+    assert!(moved < 64, "a cursor move wrote {moved} bytes");
+    ed.handle(&plain_key(KeyCode::Char('x')));
+    let typed = r.frame(&ed, 0).len();
+    assert!(typed < 120, "a character typed wrote {typed} bytes");
+    // Nothing changed: nothing written.
+    assert_eq!(r.frame(&ed, 0).len(), 0);
+    assert_eq!(r.stats().cells, 0);
+    // After invalidating, everything again.
+    r.invalidate();
+    assert!(r.frame(&ed, 0).len() > 500);
+}
+
+/// Split views are drawn in their tiles with a separator, the cursor in
+/// the focused one.
+#[test]
+fn split_views_are_composed() {
+    let mut ed = editor_with("left\ntext", 21, 7);
+    let cx = flash_core::Context {
+        view: None,
+        count: None,
+        arg: None,
+    };
+    ed.run_named("vsplit", &cx);
+    let s = screen(&ed);
+    assert_eq!(s.cells[0][10], '│');
+    assert_eq!(s.row(0), "left      │left");
+    assert_eq!(s.cursor, Some((11, 0)), "in the focused (right) view");
+    ed.run_named("split", &cx);
+    let s = screen(&ed);
+    // The right half split again: a separator row naming its document.
+    assert!(s.row(3).contains("│ [scratch]"), "{:?}", s.row(3));
+    assert_eq!(s.cursor, Some((11, 4)));
+    ed.run_named("only", &cx);
+    let s = screen(&ed);
+    assert_eq!(s.row(0), "left");
+}
+
+/// A theme's colors reach the terminal.
+#[test]
+fn theme_colors_are_written() {
+    let mut ed = editor_with("abc", 20, 3);
+    ed.load_config(
+        "test",
+        Some("[theme]\n\"ui.statusline\" = { fg = \"red\", bg = \"#102030\", modifiers = [\"bold\"] }\n"),
+    );
+    assert_eq!(ed.config_errors(), []);
+    let bytes = frame(&ed);
+    let s = String::from_utf8_lossy(&bytes);
+    assert!(s.contains("\x1b[0;1;31;48;2;16;32;48m"), "{s:?}");
+    let screen = Screen::of(&bytes, 20, 3);
+    assert!(!screen.reversed[2][0], "the user's style replaces reverse");
 }
 
 fn plain_key(code: KeyCode) -> Event {
@@ -592,7 +731,7 @@ fn random_events_render_cleanly() {
         Modifiers::CTRL,
         Modifiers::ALT,
     ];
-    for _ in 0..150 {
+    for run in 0..150 {
         let text: String = (0..next(40))
             .map(|_| PIECES[next(PIECES.len() as u64)])
             .collect();
@@ -606,7 +745,20 @@ fn random_events_render_cleanly() {
             .unwrap();
         }
         let mut renderer = Renderer::new();
-        let mut plain_renderer = Renderer::new();
+        // Every strategy keeps the screen right.
+        renderer.set_strategy([Strategy::Cells, Strategy::Rows, Strategy::Full][run % 3]);
+        if next(3) == 0 {
+            ed.run_named(
+                if next(2) == 0 { "split" } else { "vsplit" },
+                &flash_core::Context {
+                    view: None,
+                    count: None,
+                    arg: None,
+                },
+            );
+        }
+        let (w0, h0) = ed.screen();
+        let mut screen = Screen::new(w0.into(), h0.into(), false);
         for _ in 0..100 {
             let event = match next(20) {
                 0 => Event::Paste {
@@ -624,13 +776,31 @@ fn random_events_render_cleanly() {
             ed.handle(&event);
             ed.take_requests();
             let (w, h) = ed.screen();
+            if (usize::from(w), usize::from(h)) != (screen.term.w, screen.term.h) {
+                // A resize: the terminal is a new size (the renderer
+                // writes a whole frame).
+                screen = Screen::new(w.into(), h.into(), false);
+            }
             let bytes = renderer.frame(&ed, 0).to_vec();
-            Screen::of(&bytes, w.into(), h.into());
-            // The view's layout cache never changes the frame.
+            screen.apply(&bytes);
+            // What the changes left on screen is what a whole frame, laid
+            // out without the cache, shows.
+            let mut plain_renderer = Renderer::new();
             plain_renderer.use_layout = false;
-            if plain_renderer.frame(&ed, 0) != &bytes[..] {
+            let full = Screen::of(plain_renderer.frame(&ed, 0), w.into(), h.into());
+            if full.shows() != screen.shows() {
                 let f = ed.focus().unwrap();
                 let (v, d) = ed.view_document(f).unwrap();
+                for y in 0..full.cells.len() {
+                    eprintln!(
+                        "{y}: full {:?} {:?} | diffed {:?} {:?}",
+                        full.cells[y].iter().collect::<String>(),
+                        full.reversed[y].iter().map(|&r| if r { 'r' } else { '.' }).collect::<String>(),
+                        screen.cells[y].iter().collect::<String>(),
+                        screen.reversed[y].iter().map(|&r| if r { 'r' } else { '.' }).collect::<String>(),
+                    );
+                }
+                eprintln!("cursor full {:?} diffed {:?}; strategy {}; frame {:?}", full.cursor, screen.cursor, run % 3, String::from_utf8_lossy(&bytes));
                 panic!(
                     "after {event:?}: text {:?} sel {:?} left {} top {} size {:?} cursor {:?}",
                     d.text().to_string(),

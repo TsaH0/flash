@@ -445,8 +445,10 @@ dependencies = [
 name = "flash-term"
 version = "0.1.0"
 dependencies = [
+ "compact_str",
  "crossterm",
  "flash-core",
+ "unicode-segmentation",
 ]
 
 [[package]]

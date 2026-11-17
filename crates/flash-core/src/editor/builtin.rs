@@ -307,6 +307,25 @@ static COMMANDS: &[(&str, &str, Body)] = &[
     ("previous-view", "Focus the previous view.", |ed, _| {
         ed.cycle_view(false)
     }),
+    (
+        "split",
+        "Split the view: a second view of the document below it.",
+        |ed, _| ed.split(false),
+    ),
+    (
+        "vsplit",
+        "Split the view: a second view of the document beside it.",
+        |ed, _| ed.split(true),
+    ),
+    ("only", "Show only the focused view.", |ed, _| ed.only()),
+    ("next-tile", "Focus the next view on screen.", |ed, _| {
+        ed.cycle_tile(true)
+    }),
+    (
+        "previous-tile",
+        "Focus the previous view on screen.",
+        |ed, _| ed.cycle_tile(false),
+    ),
 ];
 
 /// Commands of modes, selections, the prompt, and the command line.

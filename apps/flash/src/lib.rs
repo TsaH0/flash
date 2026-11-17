@@ -9,3 +9,4 @@ pub mod io;
 pub mod latency;
 pub mod requests;
 pub mod searcher;
+pub mod source;

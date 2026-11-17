@@ -18,6 +18,9 @@ crossterm.workspace = true
 # SIGTSTP/SIGCONT/SIGTERM/SIGHUP/SIGINT handling (already in the tree
 # through crossterm).
 signal-hook.workspace = true
+# poll(2) and a wake pipe for the main-thread input experiment
+# (DECISIONS 045); already in the tree for the pty tests.
+rustix = { workspace = true, features = ["event", "pipe"] }
 
 [dev-dependencies]
 tempfile.workspace = true

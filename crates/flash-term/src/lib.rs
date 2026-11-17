@@ -12,10 +12,13 @@
 
 #![forbid(unsafe_code)]
 
+pub mod emit;
+pub mod grid;
 pub mod input;
 pub mod osc52;
 pub mod render;
 pub mod terminal;
 
 pub use input::convert;
+pub use emit::Strategy;
 pub use render::Renderer;

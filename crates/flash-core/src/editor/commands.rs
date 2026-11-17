@@ -482,6 +482,9 @@ impl Editor {
             }
             "o" | "e" => self.run_named("open", &cx(arg)),
             "noh" | "nohlsearch" => self.run_named("search-clear", &cx(None)),
+            "sp" => self.run_named("split", &cx(None)),
+            "vs" => self.run_named("vsplit", &cx(None)),
+            "on" => self.run_named("only", &cx(None)),
             "set" | "setlocal" => {
                 let scope = if name == "set" {
                     Scope::Global

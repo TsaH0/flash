@@ -24,11 +24,24 @@ struct Session {
     master: File,
     slave: File,
     output: Arc<Mutex<Vec<u8>>>,
+    /// When each chunk of output was read from the master side.
+    arrivals: Arc<Mutex<Vec<Instant>>>,
     original: LocalModes,
 }
 
 impl Session {
     fn start(args: &[&Path], env: &[(&str, &str)]) -> Session {
+        Session::start_with(args, env, None)
+    }
+
+    /// With `throttle` (bytes, pause), the master side is read at most
+    /// that many bytes at a time with a pause after each read: a slow
+    /// terminal or link.
+    fn start_with(
+        args: &[&Path],
+        env: &[(&str, &str)],
+        throttle: Option<(usize, Duration)>,
+    ) -> Session {
         let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
         grantpt(&master).unwrap();
         unlockpt(&master).unwrap();
@@ -58,6 +71,11 @@ impl Session {
             .stderr(Stdio::piped())
             .env_remove("FLASH_TRACE")
             .env_remove("FLASH_LATENCY_LOG")
+            // Whole frames, so a test can look for text in the output (a
+            // frame that writes only what changed may skip a character
+            // that did not change). The renderer's own tests check the
+            // frames of changes against an emulated screen.
+            .env("FLASH_RENDER", "full")
             // Hermetic: never the user's own config file.
             .env("XDG_CONFIG_HOME", "/nonexistent/flash-test-config");
         for (k, v) in env {
@@ -66,16 +84,23 @@ impl Session {
         let child = cmd.spawn().unwrap();
         let master = File::from(master);
         let output = Arc::new(Mutex::new(Vec::new()));
+        let arrivals = Arc::new(Mutex::new(Vec::new()));
         {
             let mut reader = master.try_clone().unwrap();
             let output = Arc::clone(&output);
+            let arrivals = Arc::clone(&arrivals);
             thread::spawn(move || {
                 let mut buf = [0; 4096];
-                while let Ok(n) = reader.read(&mut buf) {
+                let chunk = throttle.map_or(buf.len(), |(n, _)| n.min(buf.len()));
+                while let Ok(n) = reader.read(&mut buf[..chunk]) {
                     if n == 0 {
                         break;
                     }
+                    arrivals.lock().unwrap().push(Instant::now());
                     output.lock().unwrap().extend_from_slice(&buf[..n]);
+                    if let Some((_, pause)) = throttle {
+                        thread::sleep(pause);
+                    }
                 }
             });
         }
@@ -84,6 +109,7 @@ impl Session {
             master,
             slave,
             output,
+            arrivals,
             original,
         }
     }
@@ -424,7 +450,9 @@ fn a_config_file_binds_keys_and_reloads_at_runtime() {
 /// Not a check: measures the whole interactive path (input thread,
 /// channel, command, frame, write to a pty) for 500 keys typed 5 ms apart
 /// into a 1 MB file, and appends the latency log line to
-/// `$FLASH_PTY_LATENCY_OUT`. Run with `--ignored`.
+/// `$FLASH_PTY_LATENCY_OUT`. Run with `--ignored`. The renderer writes
+/// what changed (`$FLASH_PTY_RENDER`: `full`, `rows`, or `cells`, the
+/// default).
 #[test]
 #[ignore]
 fn interactive_latency() {
@@ -435,7 +463,11 @@ fn interactive_latency() {
         .map(|i| format!("    let value_{i} = compute({i}, \"text\"); // note\n"))
         .collect();
     fs::write(&doc, &content).unwrap();
-    let mut s = Session::start(&[&doc], &[("FLASH_LATENCY_LOG", &out)]);
+    let render = std::env::var("FLASH_PTY_RENDER").unwrap_or_else(|_| "cells".to_owned());
+    let mut s = Session::start(
+        &[&doc],
+        &[("FLASH_LATENCY_LOG", &out), ("FLASH_RENDER", &render)],
+    );
     s.wait_ready();
     // Typing is measured in insert mode.
     s.send(b"i");
@@ -446,10 +478,114 @@ fn interactive_latency() {
         s.send(keys[i % keys.len()]);
         thread::sleep(Duration::from_millis(5));
     }
-    // Quit without saving: Ctrl+Q, then confirm.
+    // Quit without saving: Ctrl+Q, then confirm (the output may hold only
+    // the changed cells of the question, so it is not looked for).
     s.send(b"\x11");
-    s.wait_until("the quit question", |s| s.text().contains("quit anyway"));
+    thread::sleep(Duration::from_millis(300));
     s.send(b"y");
     assert!(s.wait_exit().success());
     s.assert_restored();
+}
+
+/// For each key sent at `sent[i]`: when the first and the last output
+/// bytes for it arrived, as delays from sending it (output arriving
+/// before the next key is sent counts for this one).
+fn key_delays(sent: &[Instant], arrivals: &[Instant]) -> (Vec<u64>, Vec<u64>) {
+    let (mut first, mut last) = (Vec::new(), Vec::new());
+    for (i, &t) in sent.iter().enumerate() {
+        let until = sent.get(i + 1).copied();
+        let mine: Vec<Instant> = arrivals
+            .iter()
+            .copied()
+            .filter(|&a| a > t && until.is_none_or(|u| a <= u))
+            .collect();
+        if let (Some(f), Some(l)) = (mine.first(), mine.last()) {
+            first.push((*f - t).as_nanos() as u64);
+            last.push((*l - t).as_nanos() as u64);
+        }
+    }
+    (first, last)
+}
+
+fn percentiles(mut v: Vec<u64>) -> String {
+    if v.is_empty() {
+        return "{}".to_owned();
+    }
+    v.sort_unstable();
+    let p = |q: f64| v[((v.len() as f64 * q) as usize).min(v.len() - 1)];
+    format!(
+        r#"{{"n":{},"p50_ns":{},"p95_ns":{},"p99_ns":{},"max_ns":{}}}"#,
+        v.len(),
+        p(0.5),
+        p(0.95),
+        p(0.99),
+        v[v.len() - 1]
+    )
+}
+
+/// Not a check: the input path and the output strategies measured from
+/// the terminal's side (DECISIONS 044, 045). For each input design
+/// (`FLASH_INPUT` thread or main) and strategy, 400 keys 5 ms apart into a
+/// 1 MB file; the delay from writing a key to the pty to the first and
+/// the last byte of its frame arriving. Then the same on a slow link (the
+/// master read 256 bytes per millisecond, about 256 KB/s) with keys 20 ms
+/// apart. Appends one JSON line per run to `$FLASH_PTY_LATENCY_OUT`. Run
+/// with `--ignored`.
+#[test]
+#[ignore]
+fn input_and_output_paths() {
+    let out = std::env::var("FLASH_PTY_LATENCY_OUT").expect("set FLASH_PTY_LATENCY_OUT");
+    let dir = tempfile::tempdir().unwrap();
+    let doc = dir.path().join("medium.txt");
+    let content: String = (0..25_000)
+        .map(|i| format!("    let value_{i} = compute({i}, \"text\"); // note\n"))
+        .collect();
+    fs::write(&doc, &content).unwrap();
+    let keys: &[&[u8]] = &[
+        b"x", b"y", b"\x7f", b"\x1b[B", b"\x1b[C", b"z", b"\r", b"\x1b[A",
+    ];
+    let runs: &[(&str, &str, Option<(usize, Duration)>, u64)] = &[
+        ("thread", "cells", None, 5),
+        ("main", "cells", None, 5),
+        ("thread", "full", None, 5),
+        ("main", "full", None, 5),
+        ("thread", "full", Some((256, Duration::from_millis(1))), 20),
+        ("thread", "rows", Some((256, Duration::from_millis(1))), 20),
+        ("thread", "cells", Some((256, Duration::from_millis(1))), 20),
+    ];
+    let mut lines = Vec::new();
+    for &(input, render, throttle, gap) in runs {
+        let mut s = Session::start_with(
+            &[&doc],
+            &[("FLASH_INPUT", input), ("FLASH_RENDER", render)],
+            throttle,
+        );
+        s.wait_ready();
+        s.send(b"i");
+        thread::sleep(Duration::from_millis(300));
+        let mut sent = Vec::new();
+        for i in 0..400 {
+            sent.push(Instant::now());
+            s.send(keys[i % keys.len()]);
+            thread::sleep(Duration::from_millis(gap));
+        }
+        thread::sleep(Duration::from_millis(300));
+        let arrivals = s.arrivals.lock().unwrap().clone();
+        let bytes = s.output.lock().unwrap().len();
+        s.send(b"\x11");
+        thread::sleep(Duration::from_millis(300));
+        s.send(b"y");
+        assert!(s.wait_exit().success());
+        let (first, last) = key_delays(&sent, &arrivals);
+        lines.push(format!(
+            r#"{{"source":"pty-side","input":"{input}","render":"{render}","throttle":{},"gap_ms":{gap},"bytes":{bytes},"first_byte":{},"last_byte":{}}}"#,
+            throttle.is_some(),
+            percentiles(first),
+            percentiles(last)
+        ));
+    }
+    let mut f = OpenOptions::new().create(true).append(true).open(out).unwrap();
+    for l in lines {
+        writeln!(f, "{l}").unwrap();
+    }
 }

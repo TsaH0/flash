@@ -51,6 +51,7 @@ mod options;
 mod owner;
 mod prompt;
 mod select;
+mod tiles;
 
 pub use command::{CommandError, CommandFn, CommandId, CommandInfo, Commands, Context};
 pub use commands::{Request, SaveSnapshot};
@@ -70,6 +71,7 @@ pub use options::{
 pub use owner::Owner;
 pub use prompt::{Prompt, PromptKind};
 pub use select::RegexAction;
+pub use tiles::{Rect, Separator};
 
 #[cfg(test)]
 mod commands_tests;
@@ -230,6 +232,12 @@ pub struct Editor {
     quit_after_save: bool,
     /// Search state: the pattern, highlighting, an incremental search.
     search: find::Search,
+    /// Styles for drawing, from the config's `[theme]` layers.
+    theme: crate::theme::Theme,
+    /// The views on screen and where (their sizes follow).
+    tiling: tiles::Tiling,
+    tiles: Vec<(ViewId, Rect)>,
+    separators: Vec<Separator>,
     config_errors: Vec<ConfigError>,
     /// Wall time of the last commit, for instrumentation only.
     last_commit_ns: u64,
@@ -260,6 +268,10 @@ impl Editor {
             count: None,
             quit_after_save: false,
             search: find::Search::default(),
+            theme: crate::theme::Theme::default(),
+            tiling: tiles::Tiling::default(),
+            tiles: Vec::new(),
+            separators: Vec::new(),
             config_errors: Vec::new(),
             last_commit_ns: 0,
         };
@@ -280,6 +292,11 @@ impl Editor {
         let errors = editor.apply_config(Owner::DEFAULTS, "default config", DEFAULT_CONFIG);
         debug_assert!(errors.is_empty(), "default config: {errors:?}");
         editor
+    }
+
+    /// The theme (the default config's `[theme]` and the user's).
+    pub fn theme(&self) -> &crate::theme::Theme {
+        &self.theme
     }
 
     /// The key bindings.
@@ -355,7 +372,9 @@ impl Editor {
             mode: ModeId::NORMAL,
         });
         document.add_view(view);
+        self.show(view);
         self.focus = Some(view);
+        self.relayout();
         self.emit(EditorEvent::ViewOpened { view });
         self.enforce_min(view);
         Ok(view)
@@ -368,6 +387,7 @@ impl Editor {
             .views
             .remove(view)
             .ok_or(EditorError::NoSuchView(view))?;
+        self.tiling.remove(view);
         if let Some(doc) = self.documents.get_mut(removed.doc) {
             doc.remove_view(view);
         }
@@ -385,6 +405,7 @@ impl Editor {
             .ok_or(EditorError::NoSuchDocument(doc))?;
         for view in removed.views() {
             self.views.remove(view);
+            self.tiling.remove(view);
             self.options.forget_view(view);
             self.emit(EditorEvent::ViewClosed { view });
         }
@@ -398,9 +419,129 @@ impl Editor {
         if !self.views.contains_key(view) {
             return Err(EditorError::NoSuchView(view));
         }
+        self.show(view);
         self.focus = Some(view);
+        self.relayout();
         self.scroll(view);
         Ok(())
+    }
+
+    /// The views on screen and their text areas (the focused view among
+    /// them), in tiling order.
+    pub fn tiles(&self) -> &[(ViewId, Rect)] {
+        &self.tiles
+    }
+
+    /// The lines between split views.
+    pub fn separators(&self) -> &[Separator] {
+        &self.separators
+    }
+
+    /// Shows `view`: in the focused view's tile if it is not on screen.
+    fn show(&mut self, view: ViewId) {
+        if self.tiling.contains(view) {
+            return;
+        }
+        let replaced = self
+            .focus
+            .is_some_and(|f| f != view && self.tiling.replace(f, view));
+        if !replaced {
+            match self.tiling.leaves().first() {
+                Some(&first) => {
+                    self.tiling.replace(first, view);
+                }
+                None => self.tiling.set_only(view),
+            }
+        }
+    }
+
+    /// Splits the focused view: a new view of its document (same selection
+    /// and scroll) below it, or beside it with `vertical`, focused.
+    pub(crate) fn split(&mut self, vertical: bool) -> Effects {
+        let Some(focus) = self.focus else {
+            return Effects::default();
+        };
+        let Some(old) = self.views.get(focus).cloned() else {
+            return Effects::default();
+        };
+        let Some(selection) = self.selection(focus).cloned() else {
+            return Effects::default();
+        };
+        let new = self.views.insert(View {
+            cursor: None,
+            ..old
+        });
+        if let Some(doc) = self.documents.get_mut(old.doc) {
+            doc.add_view(new);
+            let _ = doc.set_selection(new, selection);
+        }
+        self.tiling.split(focus, new, vertical);
+        self.focus = Some(new);
+        self.relayout();
+        self.emit(EditorEvent::ViewOpened { view: new });
+        Effects {
+            resize: true,
+            ..Effects::default()
+        }
+    }
+
+    /// Shows only the focused view.
+    pub(crate) fn only(&mut self) -> Effects {
+        let Some(focus) = self.focus else {
+            return Effects::default();
+        };
+        self.tiling.set_only(focus);
+        self.relayout();
+        Effects {
+            resize: true,
+            ..Effects::default()
+        }
+    }
+
+    /// Focuses the next (or previous) view on screen.
+    pub(crate) fn cycle_tile(&mut self, forward: bool) -> Effects {
+        let shown = self.tiling.leaves();
+        let Some(i) = self.focus.and_then(|f| shown.iter().position(|&v| v == f)) else {
+            return Effects::default();
+        };
+        if shown.len() < 2 {
+            return Effects::default();
+        }
+        let next = if forward {
+            (i + 1) % shown.len()
+        } else {
+            (i + shown.len() - 1) % shown.len()
+        };
+        let _ = self.set_focus(shown[next]);
+        Effects {
+            selection: true,
+            ..Effects::default()
+        }
+    }
+
+    /// Places the views on screen and sizes them to their tiles, then
+    /// scrolls each to its cursor.
+    pub(crate) fn relayout(&mut self) {
+        let (width, height) = self.view_area();
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        };
+        self.tiling
+            .layout(area, &mut self.tiles, &mut self.separators);
+        let tiles = std::mem::take(&mut self.tiles);
+        for &(view, rect) in &tiles {
+            if let Some(v) = self.views.get_mut(view) {
+                (v.width, v.height) = (rect.width, rect.height);
+            }
+        }
+        self.tiles = tiles;
+        for i in 0..self.tiles.len() {
+            let view = self.tiles[i].0;
+            self.scroll(view);
+        }
     }
 
     pub fn focus(&self) -> Option<ViewId> {
@@ -674,10 +815,13 @@ impl Editor {
         let mut fx = match event {
             Event::Resize { width, height } => {
                 self.screen = (*width, *height);
+                // Views not on screen take the whole area, as they would
+                // when shown alone.
                 let (w, h) = self.view_area();
                 for view in self.views.values_mut() {
                     (view.width, view.height) = (w, h);
                 }
+                self.relayout();
                 Effects {
                     resize: true,
                     ..Effects::default()
@@ -1012,14 +1156,21 @@ impl Editor {
         }
     }
 
-    /// Focus the first remaining view if the focused one is gone.
+    /// Focus a remaining view if the focused one is gone: one on screen if
+    /// any, else any view, shown.
     fn refocus(&mut self) {
         if self.focus.is_some_and(|v| !self.views.contains_key(v)) {
-            self.focus = self.views.keys().next();
+            self.focus = self
+                .tiling
+                .leaves()
+                .first()
+                .copied()
+                .or_else(|| self.views.keys().next());
             if let Some(view) = self.focus {
-                self.scroll(view);
+                self.show(view);
             }
         }
+        self.relayout();
     }
 
     /// Scrolls `view` by the least amount that shows its primary cursor

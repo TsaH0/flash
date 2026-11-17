@@ -27,7 +27,7 @@ use flash_core::trace::{
     TraceWriter,
 };
 use flash_core::{Event, KeyCode, KeyEvent, Modifiers, Text, Timestamp};
-use flash_term::Renderer;
+use flash_term::{Renderer, Strategy};
 
 const REPEATS: usize = 100;
 
@@ -90,15 +90,20 @@ fn trace_for(fx: &Fixture, text: &Text, width: u16, height: u16) -> (TraceHeader
     (header, entries)
 }
 
-/// Per-event times and frame sizes in bytes.
-fn run(fx: &Fixture, width: u16, height: u16) -> (Vec<u64>, Vec<u64>) {
+/// Per-event times, frame sizes in bytes, and cells written, with frames
+/// written by `strategy` (each frame after the first is what changed).
+fn run(fx: &Fixture, width: u16, height: u16, strategy: Strategy) -> (Vec<u64>, Vec<u64>, Vec<u64>) {
     let text = Text::from(fx.content.as_str());
     let (header, entries) = trace_for(fx, &text, width, height);
     let (mut editor, _) = trace::start(&header, text).unwrap();
     let mut renderer = Renderer::new();
+    renderer.set_strategy(strategy);
     let mut sink: Vec<u8> = Vec::with_capacity(1 << 16);
     let mut samples = Vec::with_capacity(entries.len());
     let mut frame_bytes = Vec::with_capacity(entries.len());
+    let mut frame_cells = Vec::with_capacity(entries.len());
+    // The first frame (whole) is not an event's.
+    renderer.render(&editor, 0, &mut sink).unwrap();
     let idle = common::idle();
     // The pattern types: enter insert mode first (untimed), so the run
     // measures what Stage 6's did.
@@ -117,9 +122,10 @@ fn run(fx: &Fixture, width: u16, height: u16) -> (Vec<u64>, Vec<u64>) {
         sink.flush().unwrap();
         samples.push(start.elapsed().as_nanos() as u64);
         frame_bytes.push(sink.len() as u64);
+        frame_cells.push(renderer.stats().cells as u64);
         black_box(&sink);
     }
-    (samples, frame_bytes)
+    (samples, frame_bytes, frame_cells)
 }
 
 fn main() {
@@ -131,35 +137,42 @@ fn main() {
         common::unicode(),
     ];
     println!(
-        "{:<10} {:<9} {:>8} {:>8} {:>8} {:>10} {:>9} {:>9}",
-        "fixture", "viewport", "p50 ns", "p95 ns", "p99 ns", "max ns", "p50 B", "max B"
+        "{:<10} {:<9} {:<6} {:>8} {:>8} {:>8} {:>10} {:>7} {:>7} {:>7} {:>7}",
+        "fixture", "viewport", "write", "p50 ns", "p95 ns", "p99 ns", "max ns", "p50 B", "p99 B", "p50 c", "p99 c"
     );
     let idle = common::idle_json();
     let mut json = std::env::var_os("FLASH_BENCH_JSON")
         .map(|p| std::fs::File::create(p).expect("create JSON output"));
     for fx in &fixtures {
         for (w, h) in [(80, 24), (200, 60)] {
-            let (times, bytes) = run(fx, w, h);
+          for (name, strategy) in [
+            ("full", Strategy::Full),
+            ("rows", Strategy::Rows),
+            ("cells", Strategy::Cells),
+          ] {
+            let (times, bytes, cells) = run(fx, w, h, strategy);
             let s = summarize(&times).expect("trace is non-empty");
             let b = summarize(&bytes).expect("trace is non-empty");
+            let c = summarize(&cells).expect("trace is non-empty");
             let viewport = format!("{w}x{h}");
             println!(
-                "{:<10} {:<9} {:>8} {:>8} {:>8} {:>10} {:>9} {:>9}",
-                fx.name, viewport, s.p50, s.p95, s.p99, s.max, b.p50, b.max
+                "{:<10} {:<9} {:<6} {:>8} {:>8} {:>8} {:>10} {:>7} {:>7} {:>7} {:>7}",
+                fx.name, viewport, name, s.p50, s.p95, s.p99, s.max, b.p50, b.p99, c.p50, c.p99
             );
             if let Some(f) = json.as_mut() {
                 let fields = format!(
-                    r#""fixture":"{}","viewport":"{viewport}","op":"skeleton event"{idle}"#,
+                    r#""fixture":"{}","viewport":"{viewport}","op":"skeleton event","strategy":"{name}"{idle}"#,
                     fx.name
                 );
                 let mut line = s.to_json(&fields);
                 line.pop();
                 line.push_str(&format!(
-                    r#","frame_bytes":{{"p50":{},"p99":{},"max":{}}}}}"#,
-                    b.p50, b.p99, b.max
+                    r#","frame_bytes":{{"p50":{},"p99":{},"max":{}}},"frame_cells":{{"p50":{},"p99":{},"max":{}}}}}"#,
+                    b.p50, b.p99, b.max, c.p50, c.p99, c.max
                 ));
                 writeln!(f, "{line}").unwrap();
             }
+          }
         }
     }
 }

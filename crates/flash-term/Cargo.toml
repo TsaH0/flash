@@ -9,3 +9,7 @@ description = "Flash terminal frontend: crossterm input, rendering, terminal lif
 [dependencies]
 flash-core.workspace = true
 crossterm.workspace = true
+# Inline (heap-free) graphemes in grid cells.
+compact_str.workspace = true
+# Status and prompt text drawn by grapheme cluster, as the text area is.
+unicode-segmentation.workspace = true

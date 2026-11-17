@@ -28,7 +28,7 @@ use std::io::{self, BufReader, BufWriter, IsTerminal, Write};
 use std::num::NonZeroU8;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -38,13 +38,16 @@ use flash_app::io::{Done, Io};
 use flash_app::latency::{Stages, Timing, event_time};
 use flash_app::requests::{self, Outcome, Settings};
 use flash_app::searcher::Searcher;
+use flash_app::source::{Polled, Source, Threaded, Waker};
 use flash_core::trace::{
     self, DEFAULT_MAX_LINE, TRACE_VERSION, TraceEntry, TraceHeader, TraceReader, TraceSource,
     TraceWriter,
 };
 use flash_core::{Document, Editor, Request, Text, Timestamp, file};
-use flash_term::{Renderer, convert, terminal as term};
-use signal_hook::consts::signal::{SIGCONT, SIGHUP, SIGINT, SIGSTOP, SIGTERM, SIGTSTP};
+use flash_term::{Renderer, Strategy, convert, terminal as term};
+use signal_hook::consts::signal::{
+    SIGCONT, SIGHUP, SIGINT, SIGSTOP, SIGTERM, SIGTSTP, SIGWINCH,
+};
 use signal_hook::iterator::Signals;
 
 const USAGE: &str = "usage: flash [--config <file>] [--tab-width N] [file]\n       \
@@ -232,26 +235,52 @@ fn run(path: Option<&Path>, settings: &Settings) -> Result<Exit, String> {
     editor.open_document(document);
 
     let (tx, rx) = mpsc::channel();
+    // Where keys come from (DECISIONS 045): an input thread and the
+    // channel, or (`FLASH_INPUT=main`) a poll on the main thread over the
+    // terminal and a wake pipe the senders write to.
+    let polled = env::var("FLASH_INPUT").is_ok_and(|v| v == "main");
+    let (mut source, waker): (Box<dyn Source<Msg>>, Option<Waker>) = if polled {
+        let (source, waker) = Polled::new(rx, Msg::Input, Msg::InputError)
+            .map_err(|e| format!("wake pipe: {e}"))?;
+        (Box::new(source), Some(waker))
+    } else {
+        (Box::new(Threaded { rx }), None)
+    };
+    // Sends `msg` and wakes a polling main loop.
+    let sender = |tx: &mpsc::Sender<Msg>| {
+        let (tx, waker) = (tx.clone(), waker.clone());
+        move |msg: Msg| {
+            let sent = tx.send(msg).is_ok();
+            if let Some(w) = &waker {
+                w.wake();
+            }
+            sent
+        }
+    };
     // Searches of large documents run here (latest wins).
     let searcher = {
-        let tx = tx.clone();
-        Searcher::spawn(move |done| tx.send(Msg::Search(done)).is_ok())
+        let send = sender(&tx);
+        Searcher::spawn(move |done| send(Msg::Search(done)))
             .map_err(|e| format!("search thread: {e}"))?
     };
     // Saves and opens run here, off the main loop (PLAN 2.8).
     let mut io_worker = {
-        let tx = tx.clone();
-        Io::spawn(move |done| tx.send(Msg::Io(done)).is_ok())
-            .map_err(|e| format!("I/O thread: {e}"))?
+        let send = sender(&tx);
+        Io::spawn(move |done| send(Msg::Io(done))).map_err(|e| format!("I/O thread: {e}"))?
     };
-    let mut signals = Signals::new([SIGTSTP, SIGCONT, SIGTERM, SIGHUP, SIGINT])
-        .map_err(|e| format!("signal setup failed: {e}"))?;
+    // With a polling loop, a resize must also wake it (crossterm sees it
+    // through its own SIGWINCH pipe, which the poll does not watch).
+    let mut wanted = vec![SIGTSTP, SIGCONT, SIGTERM, SIGHUP, SIGINT];
+    if polled {
+        wanted.push(SIGWINCH);
+    }
+    let mut signals = Signals::new(&wanted).map_err(|e| format!("signal setup failed: {e}"))?;
     let signal_handle = signals.handle();
     {
-        let tx = tx.clone();
+        let send = sender(&tx);
         thread::spawn(move || {
             for sig in signals.forever() {
-                if tx.send(Msg::Signal(sig)).is_err() {
+                if !send(Msg::Signal(sig)) {
                     break;
                 }
             }
@@ -260,21 +289,25 @@ fn run(path: Option<&Path>, settings: &Settings) -> Result<Exit, String> {
 
     term::install_panic_hook();
     let guard = term::Guard::enter().map_err(|e| format!("terminal setup failed: {e}"))?;
-    thread::spawn(move || {
-        loop {
-            match ct::read() {
-                Ok(event) => {
-                    if tx.send(Msg::Input(event, Instant::now())).is_err() {
+    if !polled {
+        thread::spawn(move || {
+            loop {
+                match ct::read() {
+                    Ok(event) => {
+                        if tx.send(Msg::Input(event, Instant::now())).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Msg::InputError(e));
                         break;
                     }
                 }
-                Err(e) => {
-                    let _ = tx.send(Msg::InputError(e));
-                    break;
-                }
             }
-        }
-    });
+        });
+    } else {
+        drop(tx);
+    }
 
     let mut stages = Stages::default();
     let mut recording = Recording {
@@ -283,7 +316,7 @@ fn run(path: Option<&Path>, settings: &Settings) -> Result<Exit, String> {
     };
     let result = event_loop(
         &mut editor,
-        &rx,
+        &mut *source,
         &mut io_worker,
         &searcher,
         &mut stages,
@@ -356,7 +389,7 @@ fn record(entries: &mut Vec<TraceEntry>, recording: &mut Recording) {
 /// already handled, so a trace ends with the key that quit.
 fn event_loop(
     editor: &mut Editor,
-    rx: &Receiver<Msg>,
+    source: &mut dyn Source<Msg>,
     io_worker: &mut Io,
     searcher: &Searcher,
     stages: &mut Stages,
@@ -366,7 +399,7 @@ fn event_loop(
     let mut entries: Vec<TraceEntry> = Vec::new();
     let result = run_loop(
         editor,
-        rx,
+        source,
         Workers {
             io: io_worker,
             searcher,
@@ -388,7 +421,7 @@ struct Workers<'a> {
 
 fn run_loop(
     editor: &mut Editor,
-    rx: &Receiver<Msg>,
+    source: &mut dyn Source<Msg>,
     workers: Workers<'_>,
     stages: &mut Stages,
     entries: &mut Vec<TraceEntry>,
@@ -398,6 +431,7 @@ fn run_loop(
     let session = Instant::now();
     let mut out = BufWriter::with_capacity(1 << 16, io::stdout());
     let mut renderer = Renderer::new();
+    renderer.set_strategy(strategy_from_env());
     renderer.render(editor, 0, &mut out)?;
     out.flush()?;
     #[cfg(debug_assertions)]
@@ -407,7 +441,7 @@ fn run_loop(
     // Per batch: (read, dequeued, command done, commit ns) per event.
     let mut batch: Vec<(Instant, Instant, Instant, u64)> = Vec::new();
     loop {
-        let Ok(first) = rx.recv() else {
+        let Some(first) = source.wait()? else {
             return Ok(Exit::Quit);
         };
         let start = Instant::now();
@@ -440,6 +474,8 @@ fn run_loop(
                     full_redraw = true;
                 }
                 Msg::Signal(SIGCONT) => full_redraw = true,
+                // Only a wake-up: the resize itself comes from crossterm.
+                Msg::Signal(SIGWINCH) => {}
                 Msg::Signal(sig) => return Ok(Exit::Signal(sig)),
                 Msg::Io(done) => redraw |= workers.io.complete(editor, done).needs_redraw(),
                 Msg::Search(done) => redraw |= editor.search_done(done).needs_redraw(),
@@ -470,18 +506,15 @@ fn run_loop(
                 return Ok(Exit::Quit);
             }
             if start.elapsed() < DRAIN_BUDGET {
-                next = match rx.try_recv() {
-                    Ok(m) => Some(m),
-                    Err(TryRecvError::Empty) => None,
-                    Err(TryRecvError::Disconnected) => return Ok(Exit::Quit),
-                };
+                next = source.try_next()?;
             }
         }
         if full_redraw {
-            // After a suspend the screen is the shell's: clear it all.
-            crossterm::queue!(out, terminal::Clear(terminal::ClearType::All))?;
+            // After a suspend the screen is the shell's: the next frame
+            // clears it and writes everything.
+            renderer.invalidate();
         }
-        let (mut layout, mut flush, mut bytes) = (0, 0, 0);
+        let (mut layout, mut flush, mut bytes, mut cells) = (0, 0, 0, 0);
         if redraw || full_redraw {
             let last = stages.last().map_or(0, |t| t.total);
             let t0 = Instant::now();
@@ -489,6 +522,7 @@ fn run_loop(
             let t1 = Instant::now();
             bytes = frame.len() as u64;
             out.write_all(frame)?;
+            cells = renderer.stats().cells as u64;
             out.flush()?;
             layout = nanos(t1 - t0);
             flush = nanos(t1.elapsed());
@@ -505,6 +539,7 @@ fn run_loop(
                 layout,
                 flush,
                 bytes,
+                cells,
             });
         }
         record(entries, recording);
@@ -558,6 +593,7 @@ fn replay(trace_path: &Path, config: Option<PathBuf>) -> Result<(), String> {
         );
     }
     let mut renderer = Renderer::new();
+    renderer.set_strategy(strategy_from_env());
     let mut sink: Vec<u8> = Vec::with_capacity(1 << 16);
     let mut stages = Stages::default();
     for entry in &mut reader {
@@ -573,12 +609,13 @@ fn replay(trace_path: &Path, config: Option<PathBuf>) -> Result<(), String> {
             }
         }
         let t1 = Instant::now();
-        let (mut layout, mut flush, mut bytes) = (0, 0, 0);
+        let (mut layout, mut flush, mut bytes, mut cells) = (0, 0, 0, 0);
         if fx.needs_redraw() {
             let frame = renderer.frame(&editor, 0);
             let t2 = Instant::now();
             bytes = frame.len() as u64;
             sink.extend_from_slice(frame);
+            cells = renderer.stats().cells as u64;
             layout = nanos(t2 - t1);
             flush = nanos(t2.elapsed());
         }
@@ -590,6 +627,7 @@ fn replay(trace_path: &Path, config: Option<PathBuf>) -> Result<(), String> {
             layout,
             flush,
             bytes,
+            cells,
         });
     }
     match stages.to_json(r#""source":"replay""#) {
@@ -597,6 +635,15 @@ fn replay(trace_path: &Path, config: Option<PathBuf>) -> Result<(), String> {
         None => println!(r#"{{"source":"replay","events":0}}"#),
     }
     Ok(())
+}
+
+/// The renderer's strategy: `FLASH_RENDER=full|rows|cells` (for
+/// measurements; default cells, DECISIONS 044).
+fn strategy_from_env() -> Strategy {
+    env::var("FLASH_RENDER")
+        .ok()
+        .and_then(|s| Strategy::parse(&s))
+        .unwrap_or_default()
 }
 
 /// Whether `a` and `b` name the same existing file: equal canonical paths
